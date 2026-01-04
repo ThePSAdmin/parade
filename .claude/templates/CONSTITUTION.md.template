@@ -1,0 +1,46 @@
+# {{PROJECT_NAME}} - Project Constitution
+
+This document defines the vision, principles, and boundaries that guide the development and evolution of {{PROJECT_NAME}}.
+
+---
+
+## Purpose
+
+{{PURPOSE}}
+
+---
+
+## Target Users
+
+{{TARGET_USERS}}
+
+---
+
+## Core Principles
+
+{{CORE_PRINCIPLES}}
+
+---
+
+## Technical Boundaries
+
+{{TECHNICAL_BOUNDARIES}}
+
+---
+
+## Success Metrics
+
+{{SUCCESS_METRICS}}
+
+---
+
+## Version History
+
+- **Created**: Generated from template
+- **Last Updated**: This is a living document, updated as the project evolves
+
+---
+
+## Notes
+
+This constitution serves as the north star for all feature development, architectural decisions, and prioritization. When in doubt, refer back to these principles to guide your decisions.

@@ -1,0 +1,364 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://customtasktracker.dev/schemas/project.schema.json",
+  "title": "Project Configuration Schema",
+  "description": "JSON Schema for project.yaml configuration files used by the /init-project skill",
+  "type": "object",
+  "required": ["version", "project"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version for compatibility tracking",
+      "default": "1.0",
+      "enum": ["1.0"]
+    },
+    "project": {
+      "type": "object",
+      "description": "Core project identification and metadata",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Project name, used for display and identification",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9-_ ]*$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Brief description of what the project does",
+          "default": ""
+        },
+        "repository": {
+          "type": "string",
+          "description": "URL to the project's git repository",
+          "format": "uri",
+          "default": ""
+        }
+      }
+    },
+    "vision": {
+      "type": "object",
+      "description": "High-level project vision and goals",
+      "additionalProperties": false,
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "description": "The core purpose or mission statement of the project",
+          "default": ""
+        },
+        "target_users": {
+          "type": "array",
+          "description": "List of target user personas or segments",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "success_metrics": {
+          "type": "array",
+          "description": "Key metrics that define project success",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "default": {}
+    },
+    "stacks": {
+      "description": "Technology stacks configuration. Can be an object (single stack per type) or array (monorepo with multiple apps)",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/stacksObject"
+        },
+        {
+          "type": "array",
+          "description": "Array of app configurations for monorepo projects",
+          "items": {
+            "$ref": "#/$defs/appConfig"
+          }
+        }
+      ],
+      "default": {}
+    },
+    "design_system": {
+      "type": "object",
+      "description": "Design system configuration for consistent UI/UX",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether a design system is configured for this project",
+          "default": false
+        },
+        "path": {
+          "type": "string",
+          "description": "Path to design system files relative to project root",
+          "default": ".design/"
+        },
+        "docs": {
+          "type": "array",
+          "description": "List of design documentation file paths or URLs",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "default": {
+        "enabled": false,
+        "path": ".design/",
+        "docs": []
+      }
+    },
+    "data_governance": {
+      "type": "object",
+      "description": "Data governance, security, and naming conventions",
+      "additionalProperties": false,
+      "properties": {
+        "auth_provider": {
+          "type": "string",
+          "description": "Authentication provider (e.g., supabase, auth0, firebase, clerk)",
+          "default": ""
+        },
+        "rls_patterns": {
+          "type": "object",
+          "description": "Row-Level Security patterns and examples",
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "type": "string",
+              "description": "Description of the RLS approach used in this project",
+              "default": ""
+            },
+            "examples": {
+              "type": "array",
+              "description": "Example RLS policies or patterns",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            }
+          },
+          "default": {}
+        },
+        "naming_conventions": {
+          "type": "object",
+          "description": "Naming conventions for consistency across the codebase",
+          "additionalProperties": false,
+          "properties": {
+            "dates": {
+              "type": "string",
+              "description": "Date field naming pattern (e.g., 'created_at', 'createdAt')",
+              "default": "created_at"
+            },
+            "enums": {
+              "type": "string",
+              "description": "Enum naming convention (e.g., 'SCREAMING_SNAKE', 'PascalCase')",
+              "enum": ["SCREAMING_SNAKE", "snake_case", "PascalCase", "camelCase"],
+              "default": "SCREAMING_SNAKE"
+            },
+            "fields": {
+              "type": "string",
+              "description": "Field/column naming convention",
+              "enum": ["snake_case", "camelCase", "PascalCase"],
+              "default": "snake_case"
+            },
+            "files": {
+              "type": "string",
+              "description": "File naming convention",
+              "enum": ["kebab-case", "snake_case", "camelCase", "PascalCase"],
+              "default": "kebab-case"
+            },
+            "directories": {
+              "type": "string",
+              "description": "Directory naming convention",
+              "enum": ["kebab-case", "snake_case", "camelCase", "PascalCase"],
+              "default": "kebab-case"
+            }
+          },
+          "default": {}
+        }
+      },
+      "default": {}
+    },
+    "agents": {
+      "type": "object",
+      "description": "Custom agent definitions for specialized tasks",
+      "additionalProperties": false,
+      "properties": {
+        "custom": {
+          "type": "array",
+          "description": "List of custom agent configurations",
+          "items": {
+            "$ref": "#/$defs/customAgent"
+          },
+          "default": []
+        }
+      },
+      "default": {
+        "custom": []
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "description": "Workflow preferences and development process settings",
+      "additionalProperties": false,
+      "properties": {
+        "tdd_enabled": {
+          "type": "boolean",
+          "description": "Enable Test-Driven Development workflow where tests are written before implementation",
+          "default": false
+        }
+      },
+      "default": {
+        "tdd_enabled": false
+      }
+    }
+  },
+  "$defs": {
+    "stacksObject": {
+      "type": "object",
+      "description": "Stack configuration by type (frontend, backend, mobile, database)",
+      "additionalProperties": false,
+      "properties": {
+        "frontend": {
+          "$ref": "#/$defs/stackConfig"
+        },
+        "backend": {
+          "$ref": "#/$defs/stackConfig"
+        },
+        "mobile": {
+          "$ref": "#/$defs/stackConfig"
+        },
+        "database": {
+          "$ref": "#/$defs/stackConfig"
+        }
+      }
+    },
+    "stackConfig": {
+      "type": "object",
+      "description": "Configuration for a technology stack",
+      "additionalProperties": false,
+      "properties": {
+        "framework": {
+          "type": "string",
+          "description": "Primary framework (e.g., React, Next.js, Express, SwiftUI)",
+          "default": ""
+        },
+        "language": {
+          "type": "string",
+          "description": "Primary language (e.g., TypeScript, Swift, Python)",
+          "default": ""
+        },
+        "testing": {
+          "$ref": "#/$defs/testingConfig"
+        }
+      }
+    },
+    "testingConfig": {
+      "type": "object",
+      "description": "Testing configuration for a stack",
+      "additionalProperties": false,
+      "properties": {
+        "unit": {
+          "type": "string",
+          "description": "Unit testing framework (e.g., Jest, Vitest, XCTest, pytest)",
+          "default": ""
+        },
+        "e2e": {
+          "type": "string",
+          "description": "End-to-end testing framework (e.g., Playwright, Cypress, XCUITest)",
+          "default": ""
+        },
+        "commands": {
+          "type": "object",
+          "description": "CLI commands for common operations",
+          "additionalProperties": false,
+          "properties": {
+            "test": {
+              "type": "string",
+              "description": "Command to run tests",
+              "default": "npm test"
+            },
+            "lint": {
+              "type": "string",
+              "description": "Command to run linting",
+              "default": "npm run lint"
+            },
+            "build": {
+              "type": "string",
+              "description": "Command to build the project",
+              "default": "npm run build"
+            }
+          },
+          "default": {}
+        }
+      },
+      "default": {}
+    },
+    "appConfig": {
+      "type": "object",
+      "description": "Configuration for a single app in a monorepo",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "App name within the monorepo",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "description": "Stack type for this app",
+          "enum": ["frontend", "backend", "mobile", "database", "shared"]
+        },
+        "path": {
+          "type": "string",
+          "description": "Path to the app relative to monorepo root",
+          "default": ""
+        },
+        "framework": {
+          "type": "string",
+          "description": "Primary framework",
+          "default": ""
+        },
+        "language": {
+          "type": "string",
+          "description": "Primary language",
+          "default": ""
+        },
+        "testing": {
+          "$ref": "#/$defs/testingConfig"
+        }
+      }
+    },
+    "customAgent": {
+      "type": "object",
+      "description": "Custom agent definition",
+      "required": ["name", "label", "prompt_file"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display name for the agent",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "description": "Label used for task assignment (e.g., 'agent:custom-name')",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "minLength": 1
+        },
+        "prompt_file": {
+          "type": "string",
+          "description": "Path to the agent's prompt file relative to project root",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

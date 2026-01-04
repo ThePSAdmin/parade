@@ -1,0 +1,50 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(ascent-roadmap-agent)",
+      "Bash(mkdir:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(osascript:*)",
+      "Bash(screencapture:*)",
+      "Bash(xcrun simctl io:*)",
+      "Bash(xcrun simctl:*)",
+      "Bash(cat:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(python3:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(tee:*)",
+      "Bash(/tmp/final_build.log)",
+      "Bash(supabase functions deploy:*)",
+      "Bash(find:*)",
+      "Bash(mv:*)",
+      "Bash(for icon in basecamp route guide view gear)",
+      "Bash(do mkdir -p \"tab-$icon-outline.imageset\" \"tab-$icon-filled.imageset\")",
+      "Bash(done)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(cd:*)",
+      "Bash(python run_tests.py:*)",
+      "Bash(git stash:*)",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__write_file",
+      "mcp__supabase__apply_migration",
+      "mcp__supabase__list_projects",
+      "Bash(supabase db push:*)",
+      "Bash(chmod:*)",
+      "mcp__filesystem__directory_tree",
+      "mcp__filesystem__read_multiple_files"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ],
+  "statusLine": {
+    "type": "command",
+    "command": "python3 .claude/scripts/context-monitor.py"
+  }
+}

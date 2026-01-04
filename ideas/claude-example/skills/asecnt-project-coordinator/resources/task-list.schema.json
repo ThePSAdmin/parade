@@ -1,0 +1,105 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Task List",
+  "type": "object",
+  "required": ["feature", "tasks"],
+  "properties": {
+    "feature": {
+      "type": "string",
+      "description": "Feature name/identifier"
+    },
+    "created": {
+      "type": "string",
+      "format": "date"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date"
+    },
+    "execution_strategy": {
+      "type": "object",
+      "properties": {
+        "batches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ids", "name"],
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {"type": "integer"}
+              },
+              "name": {"type": "string"},
+              "parallel": {"type": "boolean", "default": false}
+            }
+          }
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "status", "execution_mode"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Unique task identifier"
+          },
+          "title": {
+            "type": "string",
+            "description": "Brief task title"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "complete", "failed", "blocked"],
+            "description": "Current task status"
+          },
+          "execution_mode": {
+            "type": "string",
+            "enum": ["delegate", "human", "coordinator"],
+            "description": "How this task should be executed"
+          },
+          "agent_type": {
+            "type": "string",
+            "description": "Which agent type to spawn for delegate tasks"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "Task IDs that must complete before this task"
+          },
+          "files_to_modify": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "File paths the agent should modify"
+          },
+          "test_file": {
+            "type": "string",
+            "description": "Test file to create or modify"
+          },
+          "context_doc": {
+            "type": ["string", "null"],
+            "description": "Path to investigation report or spec"
+          },
+          "verification_cmd": {
+            "type": ["string", "null"],
+            "description": "Command to verify task completion"
+          },
+          "output_artifact": {
+            "type": ["string", "null"],
+            "description": "Path to output file this task produces"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "summary": {
+            "type": "string",
+            "description": "Brief summary of findings/outcome"
+          }
+        }
+      }
+    }
+  }
+}

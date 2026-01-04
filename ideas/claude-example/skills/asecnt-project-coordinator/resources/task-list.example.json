@@ -1,0 +1,80 @@
+{
+  "feature": "example-feature",
+  "created": "2025-12-28",
+  "updated": "2025-12-28",
+  "execution_strategy": {
+    "batches": [
+      {"ids": [1, 2], "name": "Investigation", "parallel": true},
+      {"ids": [3, 4], "name": "Implementation", "parallel": false},
+      {"ids": [5], "name": "Verification", "parallel": false}
+    ]
+  },
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Investigate Issue A",
+      "status": "complete",
+      "execution_mode": "delegate",
+      "agent_type": "ascent-context-builder",
+      "depends_on": [],
+      "context_doc": null,
+      "output_artifact": "investigation-reports/issue-a.md",
+      "verification_cmd": null,
+      "completed_at": "2025-12-28T10:00:00Z",
+      "summary": "Root cause: X was never called"
+    },
+    {
+      "id": 2,
+      "title": "Investigate Issue B",
+      "status": "complete",
+      "execution_mode": "delegate",
+      "agent_type": "ascent-context-builder",
+      "depends_on": [],
+      "context_doc": null,
+      "output_artifact": "investigation-reports/issue-b.md",
+      "verification_cmd": null,
+      "completed_at": "2025-12-28T10:05:00Z",
+      "summary": "Root cause: Y returns wrong type"
+    },
+    {
+      "id": 3,
+      "title": "Fix Issue A",
+      "status": "pending",
+      "execution_mode": "delegate",
+      "agent_type": "ascent-typescript-agent",
+      "depends_on": [1],
+      "files_to_modify": [
+        "src/core/handler.ts",
+        "src/core/types.ts"
+      ],
+      "test_file": "tests/unit/handler.test.ts",
+      "context_doc": "investigation-reports/issue-a.md",
+      "verification_cmd": "npm test -- --grep 'handler'"
+    },
+    {
+      "id": 4,
+      "title": "Fix Issue B",
+      "status": "pending",
+      "execution_mode": "delegate",
+      "agent_type": "ascent-typescript-agent",
+      "depends_on": [2],
+      "files_to_modify": [
+        "src/utils/converter.ts"
+      ],
+      "test_file": "tests/unit/converter.test.ts",
+      "context_doc": "investigation-reports/issue-b.md",
+      "verification_cmd": "npm test -- --grep 'converter'"
+    },
+    {
+      "id": 5,
+      "title": "Integration Verification",
+      "status": "pending",
+      "execution_mode": "delegate",
+      "agent_type": "ascent-test-agent",
+      "depends_on": [3, 4],
+      "context_doc": null,
+      "verification_cmd": "npm test",
+      "output_artifact": "verification-reports/integration-results.md"
+    }
+  ]
+}
