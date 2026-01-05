@@ -58,8 +58,18 @@ Download the latest release for your platform:
 
 | Platform | File |
 |----------|------|
-| macOS | `Parade-x.x.x.dmg` |
+| macOS (Apple Silicon) | `Parade-x.x.x-arm64.dmg` |
 | Windows | `Parade-Setup-x.x.x.exe` |
+
+### macOS: Fix "App is damaged" Error
+
+macOS quarantines unsigned apps. After installing, run:
+
+```bash
+xattr -cr /Applications/Parade.app
+```
+
+Then open the app normally.
 
 ### Run the App
 
