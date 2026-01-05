@@ -16,8 +16,18 @@ Execute implementation tasks through coordinated sub-agents with optional TDD wo
 6. Handle failures with debug loop (TDD mode) or blocking
 7. Update beads status and merge completed work
 8. **Repeat until truly done** (stop hook prevents premature exit)
+9. Present "What's next?" prompt to guide user to next workflow step
 
 **Key guarantee**: The stop hook ensures ALL tasks complete before exit. Claude queries beads state each cycle rather than tracking in context, enabling token-efficient persistence.
+
+## Telemetry Capture
+
+**Required after each agent completes:**
+1. Parse agent output JSON (last line): `{"s":"s","t":1200,"m":[...],"c":[...]}`
+2. Insert into agent_telemetry table immediately
+3. Continue even if telemetry insert fails (log warning, don't block)
+
+This enables retrospective analysis via `/retro`. Telemetry MUST be captured after EACH agent completes, not just at the end of the batch.
 
 ## When to Use
 
@@ -210,18 +220,29 @@ For each agent result:
 - **PASS**: Continue to verification
 - **FAIL**: Handle based on task type and mode
 
-### Step 4a: Capture Telemetry (REQUIRED)
+### Step 4a: Capture Telemetry (REQUIRED AFTER EACH AGENT)
 
-**After each agent completes, IMMEDIATELY capture telemetry to discovery.db.**
+**CRITICAL: Telemetry MUST be captured immediately after EACH agent completes, not just at batch end.**
 
-This is critical for retrospective analysis and debugging workflow issues.
+This is essential for:
+- Retrospective analysis via `/retro`
+- Debugging workflow bottlenecks
+- Tracking agent performance metrics
+- Understanding failure patterns
+
+**Failure Impact**: If telemetry is not captured:
+- `/retro` cannot analyze execution patterns
+- Workflow improvements cannot be informed by data
+- Bottlenecks go undetected
+
+#### Process
 
 1. **Parse agent output** - Look for compact JSON on last line:
 ```json
 {"s":"s","t":1200,"m":["src/file.ts"],"c":["src/new.ts"]}
 ```
 
-2. **Record to database** - Execute this SQL for EACH completed agent:
+2. **Record to database IMMEDIATELY** - Execute this SQL for EACH completed agent:
 ```sql
 INSERT INTO agent_telemetry (
   id, task_id, epic_id, agent_type, status, token_count,
@@ -245,7 +266,13 @@ INSERT INTO agent_telemetry (
 );
 ```
 
-3. **Compact Output Key Reference**:
+3. **Error Handling** - If telemetry insert fails:
+   - Log a warning with the error details
+   - **Continue with workflow** (do not block)
+   - The task completion will still proceed normally
+   - This ensures workflow robustness even if instrumentation fails
+
+4. **Compact Output Key Reference**:
 | Key | Meaning | Values |
 |-----|---------|--------|
 | `s` | status | `"s"` (success), `"f"` (fail), `"b"` (blocked) |
@@ -256,6 +283,13 @@ INSERT INTO agent_telemetry (
 | `x` | error msg | truncated error message (max 200 chars) |
 
 **If agent output lacks JSON**: Record with status='UNKNOWN', token_count=NULL. This indicates agents need prompt updates.
+
+**Checklist for Step 4a:**
+- [ ] Agent completed and returned result
+- [ ] JSON parsed from last line of output
+- [ ] SQL insert executed (immediately, before verification)
+- [ ] If insert fails, logged warning and continued (not blocked)
+- [ ] Workflow proceeds to Step 5 (verification)
 
 ### Step 5: Run Verification
 
@@ -538,6 +572,98 @@ See [Retro Skill](../retro/SKILL.md) and [Evolve Skill](../evolve/SKILL.md) for 
 Leave epic as `in_progress` on its branch for further review or manual testing.
 
 See [Git Strategy](./docs/git-strategy.md) for rollback procedures if issues are discovered after merge.
+
+### Step 11: Post-Completion Workflow
+
+After the epic is successfully merged and closed (Option 1, 2, or 3 completed), present a "What's next?" prompt to guide the user to their next workflow step.
+
+**Context-aware recommendations:**
+
+Analyze the just-completed epic to provide intelligent recommendations:
+
+```bash
+# Check if debug loops occurred (suggests retrospective)
+DEBUG_LOOPS=$(sqlite3 "$DISCOVERY_DB" "SELECT COUNT(*) FROM agent_telemetry WHERE epic_id='<epic-id>' AND debug_attempts > 0;" 2>/dev/null || echo 0)
+
+# Check if retrospective was already run
+RETRO_RAN=$(sqlite3 "$DISCOVERY_DB" "SELECT COUNT(*) FROM workflow_events WHERE brief_id=(SELECT brief_id FROM specs WHERE exported_epic_id='<epic-id>') AND event_type='retro_complete';" 2>/dev/null || echo 0)
+```
+
+**Present the prompt:**
+
+```
+## What's next?
+
+Epic "<epic-title>" has been merged and closed successfully.
+
+Choose your next action:
+```
+
+| Option | Command | When Recommended |
+|--------|---------|------------------|
+| 1. Run retrospective | `/retro <epic-id>` | Debug loops > 0 AND retro not yet run |
+| 2. Start new feature | `/discover` | Default next step for new work |
+| 3. View project status | `/workflow-status` | Check overall project health |
+| 4. Done for now | (exit) | User wants to stop |
+
+**Recommendation logic:**
+
+```python
+def get_recommendation(epic_id):
+    debug_loops = get_debug_loop_count(epic_id)
+    retro_ran = check_retro_completed(epic_id)
+
+    if debug_loops > 0 and not retro_ran:
+        return "1. Run retrospective (recommended - debug loops detected)"
+    else:
+        return "2. Start new feature (recommended)"
+```
+
+**Example output:**
+
+```
+## What's next?
+
+Epic "Add Post-Epic Completion Workflow Prompt" has been merged and closed successfully.
+
+Choose your next action:
+
+1. Run retrospective (/retro customTaskTracker-n24)
+2. Start new feature (/discover) ← recommended
+3. View project status (/workflow-status)
+4. Done for now
+
+What would you like to do?
+```
+
+**If debug loops occurred:**
+
+```
+## What's next?
+
+Epic "Complex Feature Implementation" has been merged and closed successfully.
+
+⚠️ 3 debug loops occurred during this epic. Running a retrospective
+   can help identify patterns and improve future executions.
+
+Choose your next action:
+
+1. Run retrospective (/retro customTaskTracker-xyz) ← recommended
+2. Start new feature (/discover)
+3. View project status (/workflow-status)
+4. Done for now
+
+What would you like to do?
+```
+
+**User selection handling:**
+
+- **Option 1**: Invoke `/retro <epic-id>` skill, then return to this prompt
+- **Option 2**: Invoke `/discover` skill to capture next feature idea
+- **Option 3**: Invoke `/workflow-status` skill, then return to this prompt
+- **Option 4**: Exit cleanly with completion message
+
+This step improves workflow continuity by reducing friction between completed work and starting new work.
 
 ---
 
