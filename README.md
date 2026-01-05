@@ -44,25 +44,38 @@ Parade is an Electron app that helps Claude Code users:
 
 ## Quick Start
 
-### 1. Clone and Install
+Parade has two components:
+1. **Skills & Scaffolding** - Installed per-project via `npx parade-init`
+2. **Visual Dashboard** - The Electron app (this repository)
+
+### Option A: Use Skills Only (No Visual Dashboard)
+
+If you just want the workflow skills without the visual app:
 
 ```bash
-git clone https://github.com/your-username/parade.git
-cd parade
+cd /path/to/your-project
+npx parade-init
+```
+
+Then in Claude Code:
+```
+/init-project
+```
+
+You're ready to use `/discover`, `/approve-spec`, `/run-tasks`, etc.
+
+### Option B: Full Setup with Visual Dashboard
+
+#### Step 1: Install the Parade App
+
+```bash
+# Clone the Parade repository (one-time setup)
+git clone https://github.com/anthropics/parade.git ~/parade
+cd ~/parade
 npm install
 ```
 
-### 2. Run the App
-
-```bash
-npm run dev
-```
-
-The app opens to the **Guide** page, which walks you through the workflow.
-
-### 3. Initialize Your Project
-
-**Step 1: Scaffold directories** (in your terminal)
+#### Step 2: Initialize Your Project
 
 ```bash
 cd /path/to/your-project
@@ -74,7 +87,7 @@ This creates the base structure:
 - `.claude/` - Skills, agents, and schemas
 - `.beads/` - Task management data (via Beads CLI)
 
-**Step 2: Configure project** (in Claude Code)
+#### Step 3: Configure Project (in Claude Code)
 
 ```
 /init-project
@@ -85,7 +98,16 @@ This interactive wizard creates:
 - `.design/` - Design system docs (optional)
 - Custom agent definitions based on your stack
 
-### 4. Start Building Features
+#### Step 4: Run the Dashboard
+
+```bash
+cd ~/parade
+npm run dev
+```
+
+The app opens to the **Guide** page. Open your project folder to see briefs, epics, and tasks.
+
+### Start Building Features
 
 Describe a feature to Claude:
 

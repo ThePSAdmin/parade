@@ -103,10 +103,21 @@ async function main() {
     await copySkills(projectPath);
 
     console.log('\n✨ Initialization complete!');
-    console.log('\nNext steps:');
+    console.log('\n' + '─'.repeat(60));
+    console.log('\n📋 Next Steps:\n');
     console.log('   1. Open Claude Code in this directory');
     console.log('   2. Run /init-project to configure your project');
     console.log('   3. Run /parade-doctor to verify setup');
+    console.log('\n🖥️  Parade App (Visual Dashboard):\n');
+    console.log('   The Parade app provides a visual Kanban board for tracking');
+    console.log('   your workflow. To install:\n');
+    console.log('   # Clone the Parade repository');
+    console.log('   git clone https://github.com/anthropics/parade.git ~/parade');
+    console.log('   cd ~/parade && npm install\n');
+    console.log('   # Run the app');
+    console.log('   npm run dev\n');
+    console.log('   Then open your project folder in the app.\n');
+    console.log('─'.repeat(60));
 
   } catch (error) {
     // Re-throw with context for better error messages

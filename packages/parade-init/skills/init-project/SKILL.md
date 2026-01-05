@@ -706,17 +706,37 @@ No problem! Here's what you can do next:
 1. **Start building a feature:**
    Run `/discover` and describe your feature idea
 
-2. **Review your constitution:**
+2. **Verify setup:**
+   Run `/parade-doctor` to check everything is configured correctly
+
+3. **Review your constitution:**
    Open `docs/CONSTITUTION.md` to review your project's guiding principles
 
-3. **Review project config:**
+4. **Review project config:**
    Open `project.yaml` to review or manually adjust settings
 
-4. **Add more custom agents:**
+5. **Add more custom agents:**
    Run `/init-project` again to add more domain experts
 
-5. **Review generated agents:**
+6. **Review generated agents:**
    Check `.claude/agents/` for coding agents tailored to your stack
+
+---
+
+**Visual Dashboard (Optional)**
+
+The Parade app provides a visual Kanban board for tracking briefs, epics, and tasks.
+
+To install (one-time setup):
+   git clone https://github.com/anthropics/parade.git ~/parade
+   cd ~/parade && npm install
+
+To run:
+   cd ~/parade && npm run dev
+
+Then open your project folder in the app.
+
+---
 
 Need help? Run `/help` for available commands.
 ```
