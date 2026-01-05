@@ -279,6 +279,13 @@ func fetchData() async throws -> [Model] {
 }
 ```
 
+## MCP Integration
+
+Before performing file operations, check available MCPs. See `.claude/docs/mcp-usage.md`.
+- Prefer `mcp__filesystem__` tools for reading Swift source files
+- Use `mcp__github__` for repository operations and PR context when available
+- MCPs provide safer, more reliable file access than shell commands
+
 ## Verification Commands
 
 ### Build and Test

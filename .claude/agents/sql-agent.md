@@ -372,6 +372,13 @@ DO:
 - Include verification results
 - Explain any migration failures clearly
 
+## MCP Integration
+
+Before performing database operations, check available MCPs. See `.claude/docs/mcp-usage.md`.
+- Use `mcp__supabase__` for live schema inspection and RLS policy verification
+- Prefer `mcp__sqlite__` or `mcp__postgres__` for direct database queries
+- MCPs provide accurate live schema data vs reading migration files
+
 ## Common Patterns
 
 ### Audit Timestamps
