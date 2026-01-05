@@ -62,17 +62,28 @@ The app opens to the **Guide** page, which walks you through the workflow.
 
 ### 3. Initialize Your Project
 
-In Claude Code, navigate to your project and run:
+**Step 1: Scaffold directories** (in your terminal)
+
+```bash
+cd /path/to/your-project
+npx parade-init
+```
+
+This creates the base structure:
+- `.parade/` - Discovery database and workflow data
+- `.claude/` - Skills, agents, and schemas
+- `.beads/` - Task management data (via Beads CLI)
+
+**Step 2: Configure project** (in Claude Code)
 
 ```
 /init-project
 ```
 
-This creates:
-- `project.yaml` - Project configuration
-- `.claude/` - Skills, agents, and schemas
-- `.beads/` - Task management data
+This interactive wizard creates:
+- `project.yaml` - Project configuration with stack, governance, and vision
 - `.design/` - Design system docs (optional)
+- Custom agent definitions based on your stack
 
 ### 4. Start Building Features
 
@@ -158,6 +169,10 @@ parade/
 │   │   └── lib/        # Utilities
 │   ├── preload/        # Electron preload scripts
 │   └── shared/         # Shared types
+├── packages/
+│   └── parade-init/    # npm package for project scaffolding
+├── .parade/
+│   └── discovery.db    # SQLite database for briefs, specs, telemetry
 ├── .claude/
 │   ├── skills/         # Workflow skills
 │   ├── agents/         # Agent definitions
@@ -173,12 +188,13 @@ parade/
 
 | Skill | Purpose |
 |-------|---------|
-| `/init-project` | Set up project configuration and scaffolding |
+| `/init-project` | Set up project configuration (after `npx parade-init`) |
 | `/discover` | Capture idea + run discovery + generate spec |
 | `/approve-spec` | Export approved spec to Beads |
 | `/run-tasks` | Execute tasks via sub-agents |
 | `/retro` | Analyze execution and generate improvements |
 | `/workflow-status` | Check current workflow state |
+| `/parade-doctor` | Diagnose project setup and health |
 
 ---
 
@@ -199,7 +215,7 @@ npm test           # Run tests
 - **Frontend**: React + TypeScript
 - **Styling**: Tailwind CSS + shadcn/ui
 - **State**: Zustand
-- **Database**: SQLite (discovery.db) + Beads (.beads/)
+- **Database**: SQLite (.parade/discovery.db) + Beads (.beads/)
 
 ---
 
