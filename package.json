@@ -49,6 +49,7 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
     "@testing-library/user-event": "^14.6.1",
@@ -91,12 +92,16 @@
       {
         "from": ".claude/skills",
         "to": "skills",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": ".claude/templates",
         "to": "templates",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
@@ -107,11 +112,9 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": {
-        "teamId": "${env.APPLE_TEAM_ID}"
-      }
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
+    "afterSign": "build/notarize.js",
     "win": {
       "target": [
         "nsis"
