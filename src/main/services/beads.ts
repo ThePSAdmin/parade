@@ -1,6 +1,7 @@
 // BeadsService - CLI wrapper for bd commands
 
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
+import { existsSync } from 'fs';
 import type {
   Issue,
   BeadId,
@@ -17,9 +18,56 @@ interface ExecResult {
   code: number;
 }
 
+/**
+ * Find the bd binary path.
+ * Electron apps launched from Finder don't inherit terminal PATH,
+ * so we need to check common locations explicitly.
+ */
+function findBdPath(): string {
+  // Common locations for bd binary
+  const commonPaths = [
+    '/opt/homebrew/bin/bd',      // Homebrew on Apple Silicon
+    '/usr/local/bin/bd',          // Homebrew on Intel / manual install
+    '/usr/bin/bd',                // System install
+    `${process.env.HOME}/.local/bin/bd`,  // User local install
+    `${process.env.HOME}/go/bin/bd`,      // Go install
+  ];
+
+  // Check common paths first (fastest)
+  for (const path of commonPaths) {
+    if (existsSync(path)) {
+      return path;
+    }
+  }
+
+  // Try to find via shell (slower but more reliable)
+  try {
+    const shellPath = execSync('which bd', {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `/opt/homebrew/bin:/usr/local/bin:/usr/bin:${process.env.PATH || ''}`,
+      },
+    }).trim();
+    if (shellPath && existsSync(shellPath)) {
+      return shellPath;
+    }
+  } catch {
+    // which failed, fall through
+  }
+
+  // Fallback to 'bd' and hope it's in PATH
+  return 'bd';
+}
+
 class BeadsService {
-  private bdPath: string = 'bd'; // Assumes bd is in PATH
+  private bdPath: string;
   private projectPath: string | null = null;
+
+  constructor() {
+    this.bdPath = findBdPath();
+    console.log('BeadsService: using bd at', this.bdPath);
+  }
 
   setProjectPath(path: string) {
     this.projectPath = path;
@@ -27,7 +75,13 @@ class BeadsService {
 
   private async exec(args: string[]): Promise<ExecResult> {
     return new Promise((resolve) => {
-      const options: { cwd?: string } = {};
+      const options: { cwd?: string; env?: NodeJS.ProcessEnv } = {
+        // Ensure PATH includes common binary locations
+        env: {
+          ...process.env,
+          PATH: `/opt/homebrew/bin:/usr/local/bin:/usr/bin:${process.env.PATH || ''}`,
+        },
+      };
       if (this.projectPath) {
         options.cwd = this.projectPath;
       }

@@ -55,7 +55,7 @@ class FileWatcherService extends EventEmitter {
   private beadsWatcher: FSWatcher | null = null;
   private paradeWatcher: FSWatcher | null = null;
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
-  private debounceMs: number = 100; // Reduced from 200ms for faster updates
+  private debounceMs: number = 300; // Increased to 300ms to coalesce SQLite -wal/-shm file events
 
   /**
    * Start watching the discovery.db file

@@ -203,6 +203,27 @@ export function groupIntoBatches(
 }
 
 /**
+ * Check if a task belongs to an epic
+ * Uses multiple strategies to handle partial loads where parent field may be undefined:
+ * 1. Direct parent field match
+ * 2. Task ID pattern match (e.g., "epicId.1" belongs to "epicId")
+ */
+function taskBelongsToEpic(task: TaskWithDeps, epicId: string): boolean {
+  // Strategy 1: Direct parent field match
+  if (task.parent === epicId) {
+    return true;
+  }
+
+  // Strategy 2: Task ID pattern match (epicId.N format)
+  // e.g., "customTaskTracker-n24.1" belongs to "customTaskTracker-n24"
+  if (task.id.startsWith(epicId + '.')) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Main function: Compute batches for an epic's tasks
  *
  * @param allTasks - All tasks with dependency information
@@ -214,8 +235,9 @@ export function computeBatches(
   epicId: string
 ): Batch[] {
   // Filter to tasks belonging to this epic
+  // Uses multiple strategies to handle partial loads where parent field may be undefined
   const epicTasks = allTasks.filter(
-    (task) => task.parent === epicId && task.issue_type === 'task'
+    (task) => taskBelongsToEpic(task, epicId) && task.issue_type === 'task'
   );
 
   if (epicTasks.length === 0) {

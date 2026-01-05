@@ -452,54 +452,115 @@ export const useBeadsStore = create<BeadsState>((set, get) => ({
 
   // Event subscription for real-time updates
   subscribeToChanges: () => {
+    // Track pending refresh to prevent multiple concurrent refreshes
+    let pendingRefresh: ReturnType<typeof setTimeout> | null = null;
+
     const unsubscribe = window.electron.events.onBeadsChange(() => {
-      try {
-        // Refresh data when .beads/ files change
-        // Use silent mode to avoid showing the "switching project" overlay
-        const { fetchIssues, fetchIssuesWithDeps, fetchWorktrees, computeBatchesForEpic, selectedEpic } = get();
-
-        // Add a small delay to avoid race conditions with file writes
-        // This gives the file system time to fully write the changes
-        setTimeout(() => {
-          fetchIssues({ silent: true }).catch((err) => {
-            console.error('Error fetching issues in real-time update:', err);
-          });
-
-          fetchWorktrees({ silent: true }).catch((err) => {
-            console.error('Error fetching worktrees in real-time update:', err);
-          });
-
-          // If something is selected, also refresh issues with dependencies and recompute batches
-          if (selectedEpic) {
-            fetchIssuesWithDeps({ silent: true })
-              .then(() => {
-                // Determine which epic to compute batches for
-                // If selectedEpic is a task, use its parent epic
-                // If selectedEpic is an epic, use it directly
-                let epicId: BeadId | null = null;
-                
-                if (selectedEpic.issue_type === 'task' && selectedEpic.parent) {
-                  // Task selected - find its parent epic
-                  epicId = selectedEpic.parent;
-                } else if (selectedEpic.issue_type === 'epic') {
-                  // Epic selected - use it directly
-                  epicId = selectedEpic.id;
-                }
-
-                // Only compute batches if we have a valid epic ID
-                if (epicId) {
-                  computeBatchesForEpic(epicId);
-                }
-              })
-              .catch((err) => {
-                console.error('Error fetching issues with deps in real-time update:', err);
-              });
-          }
-        }, 250); // 250ms delay to let file writes complete and reduce flickering
-      } catch (err) {
-        console.error('Error in beads change handler:', err);
+      // Cancel any pending refresh - we'll schedule a new one
+      if (pendingRefresh) {
+        clearTimeout(pendingRefresh);
       }
+
+      // Use a longer debounce (500ms) to coalesce rapid file changes
+      // SQLite creates -wal and -shm files which trigger multiple events
+      pendingRefresh = setTimeout(async () => {
+        pendingRefresh = null;
+
+        try {
+          const { selectedEpic, computeBatchesForEpic, activeProjectId, projects, filters, recentUpdates } = get();
+
+          // Don't fetch if no active project
+          if (!activeProjectId) return;
+
+          const activeProject = projects.find((p) => p.id === activeProjectId);
+          if (!activeProject) return;
+
+          // Fetch all data in parallel, then update state once
+          const [fetchedIssues, fetchedWorktrees, fetchedIssuesWithDeps] = await Promise.all([
+            beads.list(filters).catch((err) => {
+              console.error('Error fetching issues:', err);
+              return null;
+            }),
+            beads.worktreeList().catch((err) => {
+              console.error('Error fetching worktrees:', err);
+              return null;
+            }),
+            selectedEpic
+              ? beads.getAllWithDependencies().catch((err) => {
+                  console.error('Error fetching issues with deps:', err);
+                  return null;
+                })
+              : Promise.resolve(null),
+          ]);
+
+          // Now update state in a single batch to prevent multiple re-renders
+          const now = Date.now();
+          const RECENT_UPDATE_THRESHOLD = 2000;
+          const currentIssues = get().issues;
+
+          // Merge fetched issues with optimistic updates
+          let mergedIssues = fetchedIssues;
+          if (fetchedIssues) {
+            mergedIssues = fetchedIssues.map((fetchedIssue) => {
+              const recentUpdateTime = recentUpdates.get(fetchedIssue.id);
+              if (recentUpdateTime && (now - recentUpdateTime) < RECENT_UPDATE_THRESHOLD) {
+                const optimisticIssue = currentIssues.find((i) => i.id === fetchedIssue.id);
+                if (optimisticIssue) {
+                  return { ...fetchedIssue, status: optimisticIssue.status };
+                }
+              }
+              return fetchedIssue;
+            });
+          }
+
+          // Clean up old recent updates
+          const cleanedUpdates = new Map<BeadId, number>();
+          for (const [id, timestamp] of recentUpdates.entries()) {
+            if (now - timestamp < RECENT_UPDATE_THRESHOLD) {
+              cleanedUpdates.set(id, timestamp);
+            }
+          }
+
+          // Update selected epic reference if it still exists
+          let updatedSelectedEpic = selectedEpic;
+          if (selectedEpic && mergedIssues) {
+            const updatedIssue = mergedIssues.find((i) => i.id === selectedEpic.id);
+            updatedSelectedEpic = updatedIssue ?? null;
+          }
+
+          // Single state update with all fetched data
+          set({
+            ...(mergedIssues !== null && { issues: mergedIssues }),
+            ...(fetchedWorktrees !== null && { worktrees: fetchedWorktrees }),
+            ...(fetchedIssuesWithDeps !== null && { issuesWithDeps: fetchedIssuesWithDeps as TaskWithDeps[] }),
+            selectedEpic: updatedSelectedEpic,
+            recentUpdates: cleanedUpdates,
+          });
+
+          // Compute batches after state is updated
+          if (selectedEpic && fetchedIssuesWithDeps) {
+            let epicId: BeadId | null = null;
+            if (selectedEpic.issue_type === 'task' && selectedEpic.parent) {
+              epicId = selectedEpic.parent;
+            } else if (selectedEpic.issue_type === 'epic') {
+              epicId = selectedEpic.id;
+            }
+            if (epicId) {
+              computeBatchesForEpic(epicId);
+            }
+          }
+        } catch (err) {
+          console.error('Error in beads change handler:', err);
+        }
+      }, 500); // 500ms debounce to coalesce rapid file changes
     });
-    return unsubscribe;
+
+    // Return cleanup function that also clears pending refresh
+    return () => {
+      if (pendingRefresh) {
+        clearTimeout(pendingRefresh);
+      }
+      unsubscribe();
+    };
   },
 }));
