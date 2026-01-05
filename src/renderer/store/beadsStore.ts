@@ -495,7 +495,7 @@ export const useBeadsStore = create<BeadsState>((set, get) => ({
                 console.error('Error fetching issues with deps in real-time update:', err);
               });
           }
-        }, 100); // 100ms delay to let file writes complete
+        }, 250); // 250ms delay to let file writes complete and reduce flickering
       } catch (err) {
         console.error('Error in beads change handler:', err);
       }
