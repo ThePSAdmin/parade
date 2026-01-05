@@ -10,25 +10,19 @@ Parade is a companion system for [Beads](https://github.com/steveyegge/beads), p
 
 ## Quick Start
 
-### 1. Install Beads CLI (required)
-
-```bash
-npm install -g beads
-```
-
-### 2. Initialize Your Project
+### 1. Initialize Your Project
 
 ```bash
 cd /path/to/your-project
 npx parade-init
 ```
 
-This creates the workflow scaffolding:
-- `.parade/` - Discovery database and workflow data
-- `.claude/skills/` - All Parade workflow skills
-- `.beads/` - Task management (via Beads CLI)
+This single command:
+- Installs [Beads CLI](https://github.com/steveyegge/beads) if not present
+- Creates `.parade/`, `.claude/skills/`, and `.beads/` directories
+- Copies all 8 workflow skills
 
-### 3. Configure Project (in Claude Code)
+### 2. Configure Project (in Claude Code)
 
 ```bash
 claude  # Open Claude Code in your project
@@ -41,7 +35,7 @@ Then run:
 
 This interactive wizard creates your `project.yaml` with stack configuration, governance rules, and agent definitions.
 
-### 4. Start Building!
+### 3. Start Building!
 
 Describe a feature to Claude:
 ```

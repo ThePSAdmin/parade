@@ -73,7 +73,7 @@ async function scaffoldProject(projectPath = process.cwd(), options = {}) {
  * @returns {Promise<void>}
  */
 async function main() {
-  console.log('🎪 Parade Initializer v1.0.0\n');
+  console.log('🎪 Parade Initializer v1.0.1\n');
 
   const projectPath = process.cwd();
 
@@ -108,15 +108,9 @@ async function main() {
     console.log('   1. Open Claude Code in this directory');
     console.log('   2. Run /init-project to configure your project');
     console.log('   3. Run /parade-doctor to verify setup');
-    console.log('\n🖥️  Parade App (Visual Dashboard):\n');
-    console.log('   The Parade app provides a visual Kanban board for tracking');
-    console.log('   your workflow. To install:\n');
-    console.log('   # Clone the Parade repository');
-    console.log('   git clone https://github.com/JeremyKalmus/parade.git ~/parade');
-    console.log('   cd ~/parade && npm install\n');
-    console.log('   # Run the app');
-    console.log('   npm run dev\n');
-    console.log('   Then open your project folder in the app.\n');
+    console.log('\n🖥️  Parade App (Optional Visual Dashboard):\n');
+    console.log('   Download from GitHub Releases:');
+    console.log('   https://github.com/JeremyKalmus/parade/releases/latest\n');
     console.log('─'.repeat(60));
 
   } catch (error) {
