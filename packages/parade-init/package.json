@@ -1,6 +1,6 @@
 {
   "name": "parade-init",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "CLI tool to initialize new Parade workflow orchestrator projects for Claude Code",
   "main": "./lib/index.js",
   "bin": {
