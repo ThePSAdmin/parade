@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "command": ".claude/hooks/sync-brief-on-epic-close.sh \"$TOOL_INPUT\""
+      }
+    ]
+  }
+}
