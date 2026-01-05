@@ -2,6 +2,7 @@
 
 import { ipcMain, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { IPC_CHANNELS } from '../../shared/types/ipc';
 import beadsService from '../services/beads';
 import settingsService from '../services/settings';
@@ -112,8 +113,11 @@ export function registerIpcHandlers() {
       // Update BeadsService
       beadsService.setProjectPath(projectPath);
 
-      // Update DiscoveryService
-      const discoveryDbPath = path.join(projectPath, 'discovery.db');
+      // Update DiscoveryService - check .parade/ first, fallback to root
+      const paradeDbPath = path.join(projectPath, '.parade', 'discovery.db');
+      const legacyDbPath = path.join(projectPath, 'discovery.db');
+      const discoveryDbPath = fs.existsSync(paradeDbPath) ? paradeDbPath :
+                              fs.existsSync(legacyDbPath) ? legacyDbPath : paradeDbPath;
       discoveryService.setDatabasePath(discoveryDbPath);
 
       // Update TelemetryService (shares discovery.db)

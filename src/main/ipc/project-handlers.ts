@@ -516,9 +516,16 @@ Use the /init-project skill to configure this project.
       }
     }
 
-    // Initialize discovery.db with required tables
-    const discoveryDbPath = path.join(projectPath, 'discovery.db')
-    if (!fs.existsSync(discoveryDbPath)) {
+    // Initialize discovery.db with required tables (in .parade/ directory)
+    const paradeDir = path.join(projectPath, '.parade')
+    if (!fs.existsSync(paradeDir)) {
+      fs.mkdirSync(paradeDir, { recursive: true })
+      createdPaths.push(paradeDir)
+    }
+    const discoveryDbPath = path.join(paradeDir, 'discovery.db')
+    // Also check legacy location to avoid creating duplicate
+    const legacyDbPath = path.join(projectPath, 'discovery.db')
+    if (!fs.existsSync(discoveryDbPath) && !fs.existsSync(legacyDbPath)) {
       const db = new Database(discoveryDbPath)
 
       // Create all required tables
