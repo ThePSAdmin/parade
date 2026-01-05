@@ -155,6 +155,13 @@ When documenting detailed findings, decisions, or artifacts:
 - Example: `docs/features/customTaskTracker-xbi/xbi.3.md`
 - Create the directory if it doesn't exist: `mkdir -p docs/features/<epic-id>`
 
+## MCP Integration
+
+Before performing file operations, check available MCPs. See `.claude/docs/mcp-usage.md`.
+- Prefer `mcp__filesystem__` tools over shell commands for reading files
+- Use `mcp__github__` for repository history and issue context when available
+- Query `mcp__sqlite__` for discovery.db instead of raw sqlite3 commands
+
 ## Guidelines
 
 - Be thorough but concise

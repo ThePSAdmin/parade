@@ -324,6 +324,13 @@ contextBridge.exposeInMainWorld('api', {
 - Structured error handling with meaningful messages
 - Proper logging mechanisms
 
+## MCP Integration
+
+Before performing file operations, check available MCPs. See `.claude/docs/mcp-usage.md`.
+- Prefer `mcp__filesystem__` tools for reading source files and configs
+- Use `mcp__github__` for PR context and repository operations when available
+- Query `mcp__sqlite__` for local database inspection (discovery.db, beads)
+
 ## Stack-Specific Notes
 
 ### Electron Context
