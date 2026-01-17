@@ -5,6 +5,7 @@ import { Button } from '@/renderer/components/ui/button';
 import { ScrollArea } from '@/renderer/components/ui/scroll-area';
 import { FileTreeNav, FileTreeItem } from './FileTreeNav';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { docs } from '@/renderer/lib/electronClient';
 import type { DocFile, DocsListResult, DocsReadResult } from '@/shared/types/ipc';
 
 
@@ -138,7 +139,7 @@ export function DocsPage() {
       setFilesError(null);
 
       try {
-        const result: DocsListResult = await window.electron.docs.listFiles();
+        const result: DocsListResult = await docs.listFiles();
 
         if (result.error) {
           setFilesError(result.error);
@@ -172,7 +173,7 @@ export function DocsPage() {
       setContentError(null);
 
       try {
-        const result: DocsReadResult = await window.electron.docs.readFile(selectedPath!);
+        const result: DocsReadResult = await docs.readFile(selectedPath!);
 
         if (result.error) {
           setContentError(result.error);

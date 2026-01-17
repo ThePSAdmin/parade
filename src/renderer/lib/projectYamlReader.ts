@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod'
+import { project } from './electronClient'
 
 // =============================================================================
 // Type Definitions
@@ -261,7 +262,7 @@ export const ProjectYamlSchema = z.object({
  */
 export async function readProjectYaml(projectPath: string): Promise<ReadProjectYamlResult> {
   try {
-    const result = await window.electron.project.readConfig(projectPath)
+    const result = await project.readConfig(projectPath)
     return {
       config: result.config ?? null,
       error: result.error,

@@ -1,4 +1,5 @@
 // Client wrapper for beads IPC calls
+// Conditionally uses Electron IPC or HTTP API based on environment
 
 import type {
   BeadId,
@@ -9,9 +10,14 @@ import type {
   Dependency,
   Worktree,
 } from '../../shared/types/beads';
+import { beadsApi } from './api/beadsApi';
+import { api } from './api/httpClient';
 
-// Re-export the electron API with proper typing
-export const beads = {
+// Detect if running in Electron or web browser
+const isElectron = typeof window !== 'undefined' && 'electron' in window;
+
+// Electron IPC implementation
+const electronBeads = {
   async list(filters?: ListFilters): Promise<Issue[]> {
     const result = await window.electron.beads.list(filters);
     if (result.error) {
@@ -79,7 +85,7 @@ export const beads = {
     }
   },
 
-  async depTree(id: BeadId, direction?: 'up' | 'down' | 'both'): Promise<any> {
+  async depTree(id: BeadId, direction?: 'up' | 'down' | 'both'): Promise<unknown> {
     const result = await window.electron.beads.depTree(id, direction);
     if (result.error) {
       throw new Error(result.error);
@@ -87,23 +93,20 @@ export const beads = {
     return result.tree;
   },
 
-  async getAllWithDependencies(): Promise<(Issue & { dependencies?: Issue[]; blockedBy?: string[]; parent?: string })[]> {
+  async getAllWithDependencies(): Promise<(Issue & { dependencies?: unknown[]; blockedBy?: string[]; parent?: string })[]> {
     const result = await window.electron.beads.getAllWithDependencies();
     if (result.error) {
       throw new Error(result.error);
     }
     // Process the result to extract blockedBy IDs and parent from dependencies
-    // bd export format: dependencies[].depends_on_id is the blocking issue
-    // parent-child deps indicate the parent epic
     return result.issues.map((issue) => {
-      const deps = issue.dependencies || [];
-      // Find parent from parent-child dependency
-      const parentDep = deps.find((d: any) => d.type === 'parent-child');
-      const parent = parentDep ? (parentDep as any).depends_on_id : undefined;
-      // Get blockedBy from non-parent-child deps
+      const deps = (issue.dependencies || []) as Array<{ type?: string; depends_on_id?: string; id?: string }>;
+      const parentDep = deps.find((d) => d.type === 'parent-child');
+      const parent = parentDep?.depends_on_id;
       const blockedBy = deps
-        .filter((d: any) => d.type !== 'parent-child')
-        .map((d: any) => d.depends_on_id || d.id);
+        .filter((d) => d.type !== 'parent-child')
+        .map((d) => d.depends_on_id || d.id)
+        .filter((id): id is string => Boolean(id));
 
       return {
         ...issue,
@@ -122,18 +125,46 @@ export const beads = {
   },
 };
 
-export const settings = {
+// Export beads client - uses Electron IPC or HTTP API based on environment
+export const beads = isElectron ? electronBeads : beadsApi;
+
+// Settings client
+const electronSettings = {
   async get<T>(key: string): Promise<T | null> {
     return window.electron.settings.get(key);
   },
 
-  async set(key: string, value: any): Promise<void> {
+  async set(key: string, value: unknown): Promise<void> {
     return window.electron.settings.set(key, value);
   },
 };
 
-export const appInfo = {
+const httpSettings = {
+  async get<T>(key: string): Promise<T | null> {
+    if (key === 'all') {
+      return api.get<T>('/api/settings');
+    }
+    return api.get<T>(`/api/settings/${key}`);
+  },
+
+  async set(key: string, value: unknown): Promise<void> {
+    await api.put(`/api/settings/${key}`, { value });
+  },
+};
+
+export const settings = isElectron ? electronSettings : httpSettings;
+
+// App info client
+const electronAppInfo = {
   async getVersion(): Promise<string> {
     return window.electron.app.getVersion();
   },
 };
+
+const httpAppInfo = {
+  async getVersion(): Promise<string> {
+    return api.get<string>('/api/app/version');
+  },
+};
+
+export const appInfo = isElectron ? electronAppInfo : httpAppInfo;

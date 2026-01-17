@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import discoveryClient from '../lib/discoveryClient';
+import { events } from '../lib/api/events';
 import type {
   Brief,
   BriefWithRelations,
@@ -182,7 +183,7 @@ export const useDiscoveryStore = create<DiscoveryState>((set, get) => ({
   },
 
   subscribeToChanges: () => {
-    const unsubscribe = window.electron.events.onDiscoveryChange(() => {
+    const unsubscribe = events.onDiscoveryChange(() => {
       // Refresh data when discovery.db changes
       const { fetchBriefs, fetchPipelineSummary, fetchBriefWithRelations, selectedBriefId } = get();
 

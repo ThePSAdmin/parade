@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import type { Issue, BeadId, ListFilters, IssueStatus, Worktree } from '../../shared/types/beads';
 import type { Project, Settings } from '../../shared/types/settings';
 import { beads, settings } from '../lib/beadsClient';
+import { events } from '../lib/api/events';
 import { computeBatches, type Batch, type TaskWithDeps } from '../lib/batchComputation';
 
 interface BeadsState {
@@ -455,7 +456,7 @@ export const useBeadsStore = create<BeadsState>((set, get) => ({
     // Track pending refresh to prevent multiple concurrent refreshes
     let pendingRefresh: ReturnType<typeof setTimeout> | null = null;
 
-    const unsubscribe = window.electron.events.onBeadsChange(() => {
+    const unsubscribe = events.onBeadsChange(() => {
       // Cancel any pending refresh - we'll schedule a new one
       if (pendingRefresh) {
         clearTimeout(pendingRefresh);

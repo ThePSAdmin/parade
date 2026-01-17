@@ -1,6 +1,6 @@
 import { Routes, Route, NavLink, Navigate, useSearchParams } from 'react-router-dom';
 import { useState, useEffect, useCallback } from 'react';
-import { BarChart3, FileText, Kanban, Settings, FolderPlus, BookOpen, GraduationCap } from 'lucide-react';
+import { BarChart3, FileText, Kanban, Settings, FolderPlus, BookOpen, GraduationCap, Menu, X } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Label } from './components/ui/label';
 import { KanbanBoard, EpicListPanel, TaskDetailPanel } from './components/kanban';
@@ -12,10 +12,12 @@ import DragDropZone from './components/common/DragDropZone';
 import { ProjectChip } from './components/common/ProjectChip';
 import { ProjectTabBar } from './components/common/ProjectTabBar';
 import { SetupIncompleteState } from './components/common/SetupIncompleteState';
+import { DirectoryBrowser } from './components/common/DirectoryBrowser';
 import type { Project } from '../shared/types/settings';
 import type { SetupStatus } from '../shared/types/ipc';
 import { useBeadsStore } from './store/beadsStore';
 import discoveryClient from './lib/discoveryClient';
+import { settings, dialog, project as projectApi } from './lib/electronClient';
 
 // Briefs view with list and detail panels
 function BriefsView() {
@@ -36,19 +38,23 @@ function BriefsView() {
   );
 }
 
+// Detect if running in Electron or web browser
+const isElectron = typeof window !== 'undefined' && 'electron' in window;
+
 function SettingsView() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showDirectoryBrowser, setShowDirectoryBrowser] = useState(false);
   const { setActiveProject, activeProjectId, loadProjects: refreshBeadsStore } = useBeadsStore();
 
   // Load projects on mount
   useEffect(() => {
     async function loadProjects() {
       try {
-        const settings = await window.electron.settings.get('all');
-        if (settings?.projects) {
-          setProjects(settings.projects);
+        const allSettings = await settings.get<{ projects?: Project[] }>('all');
+        if (allSettings?.projects) {
+          setProjects(allSettings.projects);
         }
       } catch (err) {
         console.error('Failed to load projects:', err);
@@ -62,11 +68,15 @@ function SettingsView() {
 
   // Add a new project
   const addProject = useCallback(async (path: string) => {
+    console.log('[addProject] Starting with path:', path);
+
     // Extract project name from path (last segment)
     const name = path.split('/').pop() || path.split('\\').pop() || 'Unknown Project';
+    console.log('[addProject] Extracted name:', name);
 
     // Check if project already exists
     if (projects.some(p => p.path === path)) {
+      console.log('[addProject] Project already exists');
       setError('This project is already added');
       setTimeout(() => setError(null), 3000);
       return;
@@ -79,25 +89,32 @@ function SettingsView() {
       addedAt: new Date().toISOString(),
       isActive: projects.length === 0, // Make first project active
     };
+    console.log('[addProject] New project:', newProject);
 
     const updatedProjects = [...projects, newProject];
+    console.log('[addProject] Updated projects array:', updatedProjects);
 
     try {
-      await window.electron.settings.set('projects', updatedProjects);
+      console.log('[addProject] Saving projects...');
+      await settings.set('projects', updatedProjects);
+      console.log('[addProject] Projects saved, updating state...');
       setProjects(updatedProjects);
 
       // If this is the first project, set it as active
       if (newProject.isActive) {
-        await window.electron.settings.set('beadsProjectPath', newProject.path);
+        console.log('[addProject] Setting as active project...');
+        await settings.set('beadsProjectPath', newProject.path);
         setActiveProject(newProject.id);
       }
 
       // Sync with beadsStore so sidebar updates
+      console.log('[addProject] Refreshing beads store...');
       await refreshBeadsStore();
+      console.log('[addProject] Complete!');
     } catch (err) {
-      console.error('Failed to add project:', err);
-      setError('Failed to add project');
-      setTimeout(() => setError(null), 3000);
+      console.error('[addProject] Failed:', err);
+      setError('Failed to add project: ' + (err instanceof Error ? err.message : String(err)));
+      setTimeout(() => setError(null), 5000);
     }
   }, [projects, setActiveProject, refreshBeadsStore]);
 
@@ -112,16 +129,16 @@ function SettingsView() {
     }
 
     try {
-      await window.electron.settings.set('projects', updatedProjects);
+      await settings.set('projects', updatedProjects);
       setProjects(updatedProjects);
 
       // If the removed project was active, switch to a new one
       if (projectToRemove?.isActive) {
         if (updatedProjects.length > 0) {
-          await window.electron.settings.set('beadsProjectPath', updatedProjects[0].path);
+          await settings.set('beadsProjectPath', updatedProjects[0].path);
           setActiveProject(updatedProjects[0].id);
         } else {
-          await window.electron.settings.set('beadsProjectPath', '');
+          await settings.set('beadsProjectPath', '');
           setActiveProject(null);
         }
       }
@@ -137,8 +154,15 @@ function SettingsView() {
 
   // Handle folder picker button click
   const handleFolderPicker = useCallback(async () => {
+    // In web mode, show the directory browser
+    if (!isElectron) {
+      setShowDirectoryBrowser(true);
+      return;
+    }
+
+    // In Electron, use native dialog
     try {
-      const result = await window.electron.dialog.selectFolder();
+      const result = await dialog.selectFolder();
       if (result.paths && result.paths.length > 0) {
         addProject(result.paths[0]);
       }
@@ -147,6 +171,12 @@ function SettingsView() {
       setError('Failed to open folder picker');
       setTimeout(() => setError(null), 3000);
     }
+  }, [addProject]);
+
+  // Handle directory browser selection
+  const handleDirectorySelect = useCallback((path: string) => {
+    setShowDirectoryBrowser(false);
+    addProject(path);
   }, [addProject]);
 
   // Handle drag-drop folder addition
@@ -163,8 +193,8 @@ function SettingsView() {
     }));
 
     try {
-      await window.electron.settings.set('projects', updatedProjects);
-      await window.electron.settings.set('beadsProjectPath', project.path);
+      await settings.set('projects', updatedProjects);
+      await settings.set('beadsProjectPath', project.path);
       setProjects(updatedProjects);
       setActiveProject(project.id);
     } catch (err) {
@@ -270,13 +300,25 @@ function SettingsView() {
               Add Project Folder
             </Button>
 
-            {/* Drag Drop Zone */}
-            <div className="mt-4">
-              <DragDropZone onFolderDrop={handleFolderDrop} />
-            </div>
+            {/* Drag Drop Zone - only show in Electron mode */}
+            {isElectron && (
+              <div className="mt-4">
+                <DragDropZone onFolderDrop={handleFolderDrop} />
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Directory Browser Modal (web mode only) */}
+      {showDirectoryBrowser && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <DirectoryBrowser
+            onSelect={handleDirectorySelect}
+            onCancel={() => setShowDirectoryBrowser(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -299,7 +341,7 @@ function PipelineView() {
 
       try {
         setCheckingStatus(true);
-        const result = await window.electron.project.checkSetupStatus(activeProject.path);
+        const result = await projectApi.checkSetupStatus(activeProject.path);
         setSetupStatus(result.status);
       } catch (err) {
         console.error('Failed to check setup status:', err);
@@ -462,7 +504,11 @@ function KanbanView() {
 export default function App() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isFirstLaunch, setIsFirstLaunch] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { projects, activeProjectId, setActiveProject, isSwitchingProject } = useBeadsStore();
+
+  // Close sidebar when route changes (mobile)
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   // Initialize stores on app startup - runs only once
   useEffect(() => {
@@ -474,12 +520,12 @@ export default function App() {
         await useBeadsStore.getState().loadProjects();
 
         // Get active project from settings to set discovery database path
-        const settings = await window.electron.settings.get('all');
-        const projects = settings?.projects ?? [];
-        const activeProject = projects.find((p: { isActive?: boolean }) => p.isActive) ?? projects[0];
+        const allSettings = await settings.get<{ projects?: Project[] }>('all');
+        const loadedProjects = allSettings?.projects ?? [];
+        const activeProject = loadedProjects.find((p) => p.isActive) ?? loadedProjects[0];
 
         // Check if this is first launch (no projects configured)
-        if (!projects || projects.length === 0) {
+        if (!loadedProjects || loadedProjects.length === 0) {
           if (mounted) {
             setIsFirstLaunch(true);
           }
@@ -518,9 +564,31 @@ export default function App() {
   const defaultRoute = isFirstLaunch || projects.length === 0 ? '/settings' : '/pipeline';
 
   return (
-    <div className="flex h-screen bg-slate-950">
+    <div className="flex h-screen bg-slate-950 relative">
+      {/* Mobile menu toggle button */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="md:hidden fixed top-3 left-3 z-50 p-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 hover:bg-slate-800"
+        aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+      >
+        {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+      </button>
+
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/50 z-30"
+          onClick={closeSidebar}
+        />
+      )}
+
       {/* Sidebar */}
-      <nav className="w-56 bg-slate-950 border-r border-slate-800 flex flex-col">
+      <nav className={`
+        w-56 bg-slate-950 border-r border-slate-800 flex flex-col
+        fixed md:relative inset-y-0 left-0 z-40
+        transform transition-transform duration-200 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
         {/* Logo/Title */}
         <div className="p-4 border-b border-slate-800">
           <div className="text-lg font-bold text-slate-100">Parade</div>
@@ -541,6 +609,7 @@ export default function App() {
         <div className="flex-1 p-3 space-y-1">
           <NavLink
             to="/pipeline"
+            onClick={closeSidebar}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 isActive
@@ -554,6 +623,7 @@ export default function App() {
           </NavLink>
           <NavLink
             to="/briefs"
+            onClick={closeSidebar}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 isActive
@@ -567,6 +637,7 @@ export default function App() {
           </NavLink>
           <NavLink
             to="/kanban"
+            onClick={closeSidebar}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 isActive
@@ -580,6 +651,7 @@ export default function App() {
           </NavLink>
           <NavLink
             to="/docs"
+            onClick={closeSidebar}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 isActive
@@ -593,6 +665,7 @@ export default function App() {
           </NavLink>
           <NavLink
             to="/guide"
+            onClick={closeSidebar}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 isActive
@@ -610,6 +683,7 @@ export default function App() {
         <div className="p-3 border-t border-slate-800">
           <NavLink
             to="/settings"
+            onClick={closeSidebar}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 isActive
