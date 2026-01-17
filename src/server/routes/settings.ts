@@ -9,6 +9,7 @@ import { discoveryService } from '../../main/services/discovery';
 import { telemetryService } from '../../main/services/telemetry';
 import { docsService } from '../../main/services/docs';
 import { fileWatcherService } from '../../main/services/fileWatcher';
+import { claudeAgentService } from '../services/claudeAgent';
 
 export const settingsRouter = Router();
 
@@ -68,6 +69,9 @@ settingsRouter.put('/:key', async (req, res) => {
 
       // Update DocsService
       docsService.setProjectPath(projectPath);
+
+      // Update ClaudeAgentService
+      claudeAgentService.setProjectPath(projectPath);
 
       // Restart file watchers
       fileWatcherService.stopAll();
