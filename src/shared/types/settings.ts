@@ -26,4 +26,6 @@ export interface Settings {
   claudeApiKey?: string;
   /** List of configured projects */
   projects?: Project[];
+  /** UI theme preference */
+  theme?: 'light' | 'dark' | 'system';
 }

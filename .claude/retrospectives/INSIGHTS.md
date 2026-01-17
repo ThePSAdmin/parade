@@ -70,6 +70,7 @@ Example entries:
 |------|-------|-------------|--------------|------------------|
 | customTaskTracker-5pt | 9 | 0 | ~8K | Baseline (11/10) |
 | customTaskTracker-2go | 7 | 0 | ~6K | 11/10 (perfect) |
+| customTaskTracker-46j | 20 | 0 | ~15K | 11/10 (perfect) |
 
 <!--
 Example entries:
@@ -90,8 +91,8 @@ Track success rates by agent type to identify which need prompt improvements.
 
 | Agent | Total Tasks | Successes | Failures | Success Rate | Avg Attempts |
 |-------|-------------|-----------|----------|--------------|--------------|
-| typescript-agent | 14 | 14 | 0 | 100% | 1.0 |
-| test-agent | 2 | 2 | 0 | 100% | 1.0 |
+| typescript-agent | 33 | 33 | 0 | 100% | 1.0 |
+| test-agent | 3 | 3 | 0 | 100% | 1.0 |
 
 <!--
 Example entries:
@@ -136,4 +137,4 @@ efficiency_score = ((baseline_tokens - current_tokens) / baseline_tokens) * 100
 
 ---
 
-*Last updated: 2026-01-17 (customTaskTracker-2go retrospective)*
+*Last updated: 2026-01-17 (customTaskTracker-46j retrospective)*

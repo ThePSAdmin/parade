@@ -50,7 +50,13 @@ class ParadeWebSocket {
     // Determine WebSocket URL based on current page location
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     // @ts-expect-error - Vite injects import.meta.env at build time
-    const wsUrl = (import.meta.env?.VITE_WS_URL as string) || `${protocol}//${window.location.host}`;
+    let wsUrl = (import.meta.env?.VITE_WS_URL as string) || `${protocol}//${window.location.host}/ws`;
+
+    // In development mode (Vite on port 5173), connect directly to Express server on port 3000
+    // to bypass Vite's WebSocket proxy which has issues with message forwarding
+    if (window.location.port === '5173') {
+      wsUrl = `${protocol}//${window.location.hostname}:3000/ws`;
+    }
 
     console.log('WebSocket connecting to:', wsUrl);
 
@@ -203,6 +209,31 @@ class ParadeWebSocket {
   private handleAgentMessage(data: AgentServerMessage | { type: 'agent:session_started'; sessionId: string } | { type: 'agent:error'; error: string }) {
     switch (data.type) {
       case 'agent:message':
+        // Route AskUserQuestion tool calls from discovery sessions to the workflow store
+        if (
+          this.sessionTypes.get(data.sessionId) === 'discovery' &&
+          data.message.type === 'tool_call' &&
+          data.message.content?.type === 'tool_call' &&
+          data.message.content?.toolName === 'AskUserQuestion'
+        ) {
+          const input = data.message.content.input as {
+            questions?: Array<{ question: string }>;
+          };
+          if (input?.questions) {
+            for (const q of input.questions) {
+              useDiscoveryWorkflowStore.getState().addQuestion(q.question);
+            }
+          }
+        }
+        // Route completion messages from discovery sessions
+        if (
+          this.sessionTypes.get(data.sessionId) === 'discovery' &&
+          data.message.type === 'system' &&
+          data.message.content?.type === 'system' &&
+          (data.message.content as { subtype?: string })?.subtype === 'completion'
+        ) {
+          useDiscoveryWorkflowStore.getState().setStep('complete');
+        }
         this.agentMessageListeners.forEach((cb) => cb(data.sessionId, data.message));
         break;
       case 'agent:permission_request':
@@ -243,10 +274,13 @@ class ParadeWebSocket {
 
   // Send a message to the server
   send(message: AgentClientMessage): void {
+    console.log('[WS Client] Sending message:', message.type, message);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
+      const payload = JSON.stringify(message);
+      console.log('[WS Client] Sending payload:', payload);
+      this.ws.send(payload);
     } else {
-      console.error('WebSocket not connected, cannot send message');
+      console.error('WebSocket not connected, cannot send message. readyState:', this.ws?.readyState);
     }
   }
 

@@ -27,7 +27,8 @@ export default defineConfig({
       // Proxy WebSocket connections
       '/ws': {
         target: 'ws://localhost:3000',
-        ws: true
+        ws: true,
+        changeOrigin: true
       }
     }
   }

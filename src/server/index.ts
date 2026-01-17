@@ -32,7 +32,7 @@ import type { AgentClientMessage } from '../shared/types/agent';
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, path: '/ws' });
 
 // Middleware
 app.use(cors());
@@ -103,8 +103,18 @@ wss.on('connection', (ws) => {
 
   ws.on('message', (data) => {
     try {
-      const message = JSON.parse(data.toString()) as AgentClientMessage;
-      handleAgentMessage(ws, message);
+      const rawData = data.toString();
+      console.log('[WS] Raw data received:', rawData.substring(0, 200));
+      const message = JSON.parse(rawData);
+      console.log('[WS] Received message:', message.type);
+
+      // Handle ping/pong heartbeat
+      if (message.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+        return;
+      }
+
+      handleAgentMessage(ws, message as AgentClientMessage);
     } catch (err) {
       console.error('Failed to parse WebSocket message:', err);
     }
@@ -123,9 +133,11 @@ wss.on('connection', (ws) => {
 
 // Handle agent-related WebSocket messages
 async function handleAgentMessage(ws: WebSocket, message: AgentClientMessage) {
+  console.log('[Agent] Handling message:', message.type);
   try {
     switch (message.type) {
       case 'agent:run': {
+        console.log('[Agent] Running skill:', message.skill, 'prompt:', message.prompt?.substring(0, 50));
         let sessionId: string;
         if (message.skill) {
           // Run a skill with optional prompt

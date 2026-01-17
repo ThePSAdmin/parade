@@ -1,13 +1,13 @@
 ---
 name: discover
-description: Unified discovery flow that captures a feature idea, assesses complexity, runs appropriate discovery depth, and produces a spec. Replaces separate /create-brief and /start-discovery skills with a streamlined single-command workflow.
+description: Unified discovery flow that captures a feature idea, automatically explores the codebase, assesses complexity, and produces a spec. Uses explore agents to gather technical context before asking user questions.
 ---
 
 # Discover Skill
 
 ## Purpose
 
-Transform a user's feature idea into a detailed specification through a unified discovery flow. This skill combines brief creation and discovery into a single streamlined process with adaptive depth based on complexity assessment.
+Transform a user's feature idea into a detailed specification through an intelligent discovery flow. This skill **automatically explores the codebase** to gather technical context, **auto-assesses complexity**, and only asks the user questions that couldn't be answered through exploration.
 
 ## When to Use
 
@@ -20,11 +20,11 @@ Transform a user's feature idea into a detailed specification through a unified 
 
 ## Complexity Levels
 
-| Level | Questions | SME Agents | Typical Use Case |
-|-------|-----------|------------|------------------|
-| `quick` | 3 essential | None (skip to spec) | Small enhancements, bug fixes, config changes |
-| `standard` | 5-6 questions | Technical + Business | Most features, new functionality |
-| `complex` | 8+ questions | Full SME review + custom agents | Large initiatives, architectural changes, cross-cutting concerns |
+| Level | Auto-Assessment Criteria | User Questions | Typical Use Case |
+|-------|-------------------------|----------------|------------------|
+| `quick` | 1-3 files, single component, no new patterns | 1-2 confirmation | Small enhancements, bug fixes, config changes |
+| `standard` | 4-10 files, new component or pattern, single subsystem | 3-4 targeted | Most features, new functionality |
+| `complex` | 10+ files, multiple subsystems, architectural changes | 5-6 strategic | Large initiatives, cross-cutting concerns |
 
 ---
 
@@ -47,44 +47,137 @@ All subsequent database operations in this skill use `$DISCOVERY_DB` instead of 
 
 ### Step 1: Capture Initial Idea
 
-Ask the user to describe their feature idea. Listen for:
+If the user hasn't already described their feature, ask them to describe:
 - **What** they want to build
 - **Why** they need it (problem being solved)
-- **Who** it's for (user persona)
 
-### Step 2: Complexity Assessment
+If the user provided the idea with the `/discover` command, proceed directly to exploration.
 
-After hearing the initial idea, ask:
+### Step 2: Automatic Codebase Exploration (NEW)
 
+**CRITICAL**: Before asking any questions, spawn an explore agent to gather technical context.
+
+**Spawn Explore Agent:**
 ```
-Before we dive in, let me understand the scope:
+Task: Technical exploration for feature "<feature-title>"
 
-Is this a:
-1. **Quick enhancement** - Small change, clear scope, minimal risk
-2. **Standard feature** - New functionality requiring design and implementation
-3. **Complex initiative** - Large scope, architectural impact, cross-team concerns
+Feature Description:
+<user's feature description>
 
-(Enter 1, 2, or 3, or describe and I'll assess)
+Exploration Goals:
+1. Find existing code related to this feature area
+2. Identify files that would need modification
+3. Discover existing patterns, components, and utilities to reuse
+4. Assess technical complexity and risks
+5. Note any existing similar functionality
+
+Search Strategy:
+- Search for keywords from the feature description
+- Look for related components, stores, services, routes
+- Check for existing UI patterns that could be extended
+- Identify data models and persistence mechanisms involved
+
+Output Format (JSON):
+{
+  "related_files": ["path/to/file1.ts", ...],
+  "estimated_files_to_modify": ["path/to/file.ts", ...],
+  "existing_patterns": {
+    "components": ["ComponentName", ...],
+    "stores": ["storeName", ...],
+    "utilities": ["utilityName", ...]
+  },
+  "reusable_code": [
+    {"file": "path/to/file.ts", "what": "description of reusable element"}
+  ],
+  "complexity_indicators": {
+    "files_affected": <number>,
+    "subsystems_touched": ["ui", "api", "database", ...],
+    "new_patterns_needed": <boolean>,
+    "security_implications": <boolean>,
+    "data_persistence": <boolean>
+  },
+  "technical_findings": "Summary of what was discovered...",
+  "recommended_approach": "High-level technical approach based on findings...",
+  "open_questions": ["Questions that couldn't be answered from code..."]
+}
 ```
 
-Map response to complexity level:
-- 1 or "quick/small/simple/minor" -> `quick`
-- 2 or "standard/normal/feature/medium" -> `standard`
-- 3 or "complex/large/initiative/major/architecture" -> `complex`
+### Step 3: Automatic Complexity Assessment (NEW)
 
-### Step 3: Generate Brief ID
+Based on exploration findings, automatically determine complexity:
+
+**Quick Enhancement** (auto-assign if ALL true):
+- `files_affected` <= 3
+- `subsystems_touched` has 1 entry
+- `new_patterns_needed` is false
+- `security_implications` is false
+
+**Standard Feature** (auto-assign if ANY true):
+- `files_affected` between 4-10
+- `subsystems_touched` has 2 entries
+- `new_patterns_needed` is true
+- OR doesn't meet quick criteria but not complex
+
+**Complex Initiative** (auto-assign if ANY true):
+- `files_affected` > 10
+- `subsystems_touched` has 3+ entries
+- `security_implications` is true AND `data_persistence` is true
+- Significant architectural changes indicated
+
+**Present Assessment to User:**
+```
+## Discovery: <feature-title>
+
+### Codebase Exploration Complete
+
+**Complexity Assessment:** <quick|standard|complex>
+
+**Technical Findings:**
+<technical_findings from exploration>
+
+**Files Likely to Change:**
+- <list from estimated_files_to_modify>
+
+**Existing Patterns to Reuse:**
+- <components, stores, utilities found>
+
+**Recommended Approach:**
+<recommended_approach from exploration>
+
+---
+
+<If quick>
+This looks straightforward. I just need to confirm a few things:
+1. [confirmation question based on open_questions]
+2. Anything else I should know?
+
+<If standard>
+I have a good technical picture. A few questions to finalize the spec:
+1. [targeted question from open_questions]
+2. [UX/business question]
+3. What's the success criteria?
+
+<If complex>
+This is a significant undertaking. Let me ask some strategic questions:
+1. [architectural question from open_questions]
+2. [scope/phasing question]
+3. [risk mitigation question]
+4. What are the must-haves vs nice-to-haves?
+```
+
+### Step 4: Generate Brief ID
 
 Create a kebab-case ID from the title:
 ```
 "Add athlete experience tracking" -> "athlete-experience-tracking"
 ```
 
-### Step 4: Initialize Database and Create Brief
+### Step 5: Initialize Database and Create Brief
 
-Run schema migration and insert brief:
+Run schema migration and insert brief with exploration results:
 
 ```bash
-# Ensure tables exist with complexity_level column
+# Ensure tables exist with exploration_results column
 sqlite3 "$DISCOVERY_DB" "
 CREATE TABLE IF NOT EXISTS briefs (
   id TEXT PRIMARY KEY,
@@ -93,84 +186,78 @@ CREATE TABLE IF NOT EXISTS briefs (
   initial_thoughts TEXT,
   priority INTEGER DEFAULT 2,
   complexity_level TEXT DEFAULT 'standard',
+  exploration_results TEXT,
   status TEXT DEFAULT 'draft',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT,
   exported_epic_id TEXT
 );
 
--- Migration: Add complexity_level if missing (idempotent)
+-- Migrations (idempotent)
 ALTER TABLE briefs ADD COLUMN complexity_level TEXT DEFAULT 'standard';
-"
+ALTER TABLE briefs ADD COLUMN exploration_results TEXT;
+" 2>/dev/null || true
 
-# Insert the brief
-sqlite3 "$DISCOVERY_DB" "INSERT INTO briefs (id, title, problem_statement, initial_thoughts, priority, complexity_level, status)
-VALUES ('<brief-id>', '<title>', '<problem>', '<initial_thoughts>', <priority>, '<complexity_level>', 'in_discovery');"
+# Insert the brief with exploration results
+sqlite3 "$DISCOVERY_DB" "INSERT INTO briefs (id, title, problem_statement, initial_thoughts, priority, complexity_level, exploration_results, status)
+VALUES ('<brief-id>', '<title>', '<problem>', '<initial_thoughts>', <priority>, '<complexity_level>', '<exploration_json>', 'in_discovery');"
 ```
 
-### Step 5: Generate and Present Batched Questions
+### Step 6: Present Targeted Questions
 
-Generate questions based on complexity level, then present ALL at once:
+Questions are now **targeted based on exploration findings**. Only ask what couldn't be determined from code:
 
-#### Quick (3 questions)
+#### Quick (1-2 confirmations)
 ```
 ## Discovery: <brief-title>
 Complexity: Quick Enhancement
 
-Please answer these 3 questions:
+Based on my exploration, I found:
+- <key finding 1>
+- <key finding 2>
 
-1. [scope] What exactly needs to change? (files, components, behavior)
-2. [success] How will we verify this works correctly?
-3. [risk] Any edge cases or risks to consider?
+Just need to confirm:
+1. <specific confirmation from open_questions>
+2. Anything else I should know about this change?
 ```
 
-#### Standard (5-6 questions)
+#### Standard (3-4 targeted questions)
 ```
 ## Discovery: <brief-title>
 Complexity: Standard Feature
 
-Please answer these questions (all at once is fine):
+Based on my exploration:
+- Files to modify: <list>
+- Existing patterns to reuse: <list>
+- Recommended approach: <summary>
 
-**Technical**
-1. How should this integrate with existing data models and components?
-2. Are there performance or scalability considerations?
-
-**Business**
-3. Who are the primary users and what's their workflow?
-4. What metrics will indicate success?
-
-**UX/Scope**
-5. Walk me through the ideal user flow.
-6. What's in MVP vs future phases?
+A few questions to finalize:
+1. <open question from exploration>
+2. Who are the primary users and what's their workflow?
+3. How will we verify this works correctly?
+4. What's in MVP vs future phases? (if applicable)
 ```
 
-#### Complex (8+ questions)
+#### Complex (5-6 strategic questions)
 ```
 ## Discovery: <brief-title>
 Complexity: Complex Initiative
 
-Please answer these questions (take your time, all at once is fine):
+Based on my exploration:
+- Scope: <number> files across <subsystems>
+- Key challenges: <from exploration>
+- Recommended approach: <summary>
 
-**Technical**
-1. How does this fit into the current architecture?
-2. What data models, APIs, or services need changes?
-3. Are there performance, security, or compliance considerations?
-
-**Business**
-4. Who are all the stakeholders affected?
-5. What business metrics define success?
-6. What's the rollout strategy?
-
-**UX/Scope**
-7. Describe the complete user journey.
-8. What are the failure modes and error handling needs?
-9. What's MVP vs Phase 2 vs future?
-
-**Dependencies**
-10. What existing features or systems does this touch?
+Strategic questions:
+1. <architectural question from open_questions>
+2. <another open question>
+3. Who are all the stakeholders affected?
+4. What are the must-haves vs nice-to-haves for MVP?
+5. What's the rollout/migration strategy?
+6. Any compliance or security requirements I should know about?
 ```
 
-### Step 6: Record Answers
+### Step 7: Record Answers
 
 Store questions and answers in the database:
 
@@ -194,29 +281,58 @@ VALUES
   ...;
 ```
 
-### Step 7: SME Review (Based on Complexity)
+### Step 8: SME Review (Based on Complexity)
 
-#### Quick -> Skip SME, proceed directly to Step 8
+**Note:** The initial explore agent (Step 2) already gathered significant technical context. SME review now focuses on **validation and additional analysis**, not discovery.
 
-For quick enhancements, skip SME agents entirely and proceed to spec synthesis.
+#### Quick -> Skip SME, proceed directly to Step 9
 
-#### Standard -> Spawn Technical + Business SME
+For quick enhancements, the exploration findings are sufficient. Skip SME agents.
+
+#### Standard -> Optional Technical SME for Validation
+
+Only spawn Technical SME if exploration found:
+- Complex integration points
+- Security-sensitive areas
+- Performance concerns
+
+**Technical SME Agent (if needed):**
+```
+Task: Validate technical approach for brief '<brief-id>'
+
+Exploration Already Found:
+<exploration_results JSON from brief>
+
+Interview Answers:
+<from interview_questions table>
+
+Focus On:
+1. Validate the recommended approach from exploration
+2. Identify any risks the exploration missed
+3. Confirm pattern recommendations are appropriate
+4. Flag any additional concerns
+
+Output: Write validation to sme_reviews table with agent_type = 'technical-sme'
+```
+
+#### Complex -> Full SME Review + Custom Agents
+
+For complex initiatives, spawn SME agents to validate and expand on exploration:
 
 **Technical SME Agent:**
 ```
-Task: Technical review for brief '<brief-id>'
+Task: Deep technical review for brief '<brief-id>'
 
-Context:
-- Read brief: sqlite3 -json "$DISCOVERY_DB" "SELECT * FROM briefs WHERE id = '<brief-id>';"
-- Read answers: sqlite3 -json "$DISCOVERY_DB" "SELECT * FROM interview_questions WHERE brief_id = '<brief-id>';"
+Exploration Found:
+<exploration_results JSON>
 
-Analyze:
-1. Review existing codebase for relevant patterns
-2. Identify technical risks and constraints
-3. Suggest architecture approach
-4. Flag any concerns
+Additional Analysis Needed:
+1. Validate architectural approach
+2. Identify cross-cutting concerns
+3. Assess migration/rollout risks
+4. Review security implications
 
-Output: Write findings to sme_reviews table with agent_type = 'technical-sme'
+Output: Write findings to sme_reviews table
 ```
 
 **Business SME Agent:**
@@ -224,7 +340,7 @@ Output: Write findings to sme_reviews table with agent_type = 'technical-sme'
 Task: Business review for brief '<brief-id>'
 
 Context:
-- Read brief and interview answers from $DISCOVERY_DB
+- Exploration results and interview answers from $DISCOVERY_DB
 
 Analyze:
 1. Validate requirements completeness
@@ -235,27 +351,12 @@ Analyze:
 Output: Write findings to sme_reviews table with agent_type = 'business-sme'
 ```
 
-#### Complex -> Full SME Review + Custom Agents
-
-Spawn Technical SME and Business SME as above, plus:
-
-**Check for custom agents in project.yaml:**
+**Custom Agents (if defined in project.yaml):**
 ```bash
 if [ -f "project.yaml" ]; then
   # Parse agents.custom[] array
   # For each custom agent, spawn with their prompt_file
 fi
-```
-
-For each custom agent in `project.yaml`:
-```
-Task: Domain review for brief '<brief-id>'
-
-Context:
-- Read brief and interview answers from $DISCOVERY_DB
-- Your domain prompt is loaded from <prompt_file>
-
-Output: Write findings to sme_reviews table with agent_type = '<agent-label>'
 ```
 
 Insert SME reviews:
@@ -274,7 +375,7 @@ INSERT INTO sme_reviews (id, brief_id, agent_type, findings, recommendations, co
 VALUES ('<brief-id>-tech-review', '<brief-id>', 'technical-sme', '<findings>', '<recommendations>', '<concerns>', datetime('now'));
 ```
 
-### Step 7a: Load Design Registries (Pattern Reuse)
+### Step 8a: Load Design Registries (Pattern Reuse)
 
 Before synthesizing the spec, load existing patterns to ensure consistency:
 
@@ -324,7 +425,7 @@ Available Patterns (from .design/Patterns.md):
 
 Only propose NEW components/fields/patterns when existing ones don't fit the requirement.
 
-### Step 8: Synthesize Spec
+### Step 9: Synthesize Spec
 
 Create specification from discovery findings:
 
@@ -362,7 +463,7 @@ Update brief status:
 UPDATE briefs SET status = 'spec_ready', updated_at = datetime('now') WHERE id = '<brief-id>';
 ```
 
-### Step 9: Present Spec for Review
+### Step 10: Present Spec for Review
 
 ```
 ## Specification Ready for Review
@@ -412,10 +513,10 @@ To request changes: Tell me what to revise
 
 ## Schema Migration
 
-When running `/discover`, ensure the database schema includes the `complexity_level` column:
+When running `/discover`, ensure the database schema includes the `complexity_level` and `exploration_results` columns:
 
 ```sql
--- Create briefs table if not exists (includes complexity_level)
+-- Create briefs table if not exists (includes exploration_results)
 CREATE TABLE IF NOT EXISTS briefs (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -423,20 +524,22 @@ CREATE TABLE IF NOT EXISTS briefs (
   initial_thoughts TEXT,
   priority INTEGER DEFAULT 2,
   complexity_level TEXT DEFAULT 'standard',
+  exploration_results TEXT,
   status TEXT DEFAULT 'draft',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT,
   exported_epic_id TEXT
 );
 
--- Migration for existing databases (idempotent - SQLite will error if column exists, which is safe)
--- Wrap in try/catch or ignore error:
+-- Migrations for existing databases (idempotent)
 ALTER TABLE briefs ADD COLUMN complexity_level TEXT DEFAULT 'standard';
+ALTER TABLE briefs ADD COLUMN exploration_results TEXT;
 ```
 
 For idempotent migration in bash:
 ```bash
 sqlite3 "$DISCOVERY_DB" "ALTER TABLE briefs ADD COLUMN complexity_level TEXT DEFAULT 'standard';" 2>/dev/null || true
+sqlite3 "$DISCOVERY_DB" "ALTER TABLE briefs ADD COLUMN exploration_results TEXT;" 2>/dev/null || true
 ```
 
 ---
@@ -455,10 +558,12 @@ CREATE TABLE IF NOT EXISTS workflow_events (
 );
 
 INSERT INTO workflow_events (brief_id, event_type, details) VALUES
-  ('<brief-id>', 'discover_started', '{"complexity": "<level>"}'),
+  ('<brief-id>', 'discover_started', '{}'),
+  ('<brief-id>', 'exploration_started', '{}'),
+  ('<brief-id>', 'exploration_complete', '{"files_found": <n>, "complexity_assessed": "<level>"}'),
   ('<brief-id>', 'questions_presented', '{"count": <n>, "complexity": "<level>"}'),
   ('<brief-id>', 'answers_recorded', '{}'),
-  ('<brief-id>', 'sme_review_started', '{"agents": ["technical-sme", "business-sme"]}'),  -- if applicable
+  ('<brief-id>', 'sme_review_started', '{"agents": ["technical-sme"]}'),  -- if applicable
   ('<brief-id>', 'sme_review_complete', '{}'),  -- if applicable
   ('<brief-id>', 'spec_generated', '{"spec_id": "<brief-id>-spec"}');
 ```
@@ -471,31 +576,42 @@ INSERT INTO workflow_events (brief_id, event_type, details) VALUES
 
 **User:** I want to change the default sort order in the task list from ascending to descending
 
-**Claude:** Got it - changing default sort order. This sounds like a quick enhancement.
+**Claude:** Let me explore the codebase to understand the current implementation...
 
-Is this a:
-1. Quick enhancement
-2. Standard feature
-3. Complex initiative
-
-**User:** 1
+*[Spawns explore agent]*
 
 **Claude:**
 ```
 ## Discovery: default-sort-order-change
-Complexity: Quick Enhancement
 
-Please answer these 3 questions:
+### Codebase Exploration Complete
 
-1. [scope] What exactly needs to change? (files, components, behavior)
-2. [success] How will we verify this works correctly?
-3. [risk] Any edge cases or risks to consider?
+**Complexity Assessment:** Quick Enhancement
+
+**Technical Findings:**
+Found TaskList.tsx with a `sortDirection` state initialized to 'asc' on line 45.
+The component uses a simple toggle pattern.
+
+**Files to Change:**
+- src/renderer/components/TaskList.tsx (1 file)
+
+**Existing Patterns:**
+- Uses standard useState for sort state
+- No persistence currently (resets on refresh)
+
+**Recommended Approach:**
+Change the default value of `sortDirection` from 'asc' to 'desc' in the useState call.
+
+---
+
+This is straightforward. Just need to confirm:
+1. Should the preference persist across sessions, or is resetting on refresh OK?
+2. Anything else I should know?
 ```
 
 **User:**
-1. Just the TaskList.tsx component, change the default sortDirection from 'asc' to 'desc'
-2. Open the task list and confirm newest tasks appear first
-3. None really, it's a simple default change
+1. Resetting is fine for now
+2. No, that's all
 
 **Claude:** [Generates spec directly, no SME agents]
 
@@ -503,59 +619,142 @@ Please answer these 3 questions:
 
 **User:** We need to add a way for users to filter tasks by label
 
-**Claude:** A label filter - useful feature! Let me assess complexity.
+**Claude:** Let me explore the codebase to understand the label system and filtering patterns...
 
-Is this a:
-1. Quick enhancement
-2. Standard feature
-3. Complex initiative
-
-**User:** Standard feature
+*[Spawns explore agent]*
 
 **Claude:**
 ```
 ## Discovery: task-label-filter
-Complexity: Standard Feature
 
-Please answer these questions (all at once is fine):
+### Codebase Exploration Complete
 
-**Technical**
-1. How should this integrate with existing data models and components?
-2. Are there performance or scalability considerations?
+**Complexity Assessment:** Standard Feature
 
-**Business**
-3. Who are the primary users and what's their workflow?
-4. What metrics will indicate success?
+**Technical Findings:**
+- Labels are stored in the `labels` field on tasks (array of strings)
+- TaskList.tsx already has filtering for status, could extend pattern
+- FilterBar.tsx component exists with status/priority dropdowns
+- beadsStore.ts has `getTasksByStatus()` - could add similar `getTasksByLabel()`
 
-**UX/Scope**
-5. Walk me through the ideal user flow.
-6. What's in MVP vs future phases?
+**Files Likely to Change:**
+- src/renderer/components/FilterBar.tsx (add label dropdown)
+- src/renderer/components/TaskList.tsx (apply label filter)
+- src/renderer/store/beadsStore.ts (add filter helper)
+
+**Existing Patterns to Reuse:**
+- FilterBar dropdown pattern (already has status/priority)
+- Store filter methods pattern
+
+**Recommended Approach:**
+1. Add `selectedLabels` state to FilterBar
+2. Create multi-select label dropdown (reuse existing dropdown styling)
+3. Add `getTasksByLabels()` to beadsStore
+4. Wire filter to TaskList
+
+---
+
+I have a good technical picture. A few questions to finalize:
+
+1. Should this be single-select or multi-select (filter by multiple labels)?
+2. Who primarily uses labels - is this for power users or everyone?
+3. How will we verify this works correctly?
 ```
 
-**User:** [Provides all answers]
+**User:**
+1. Multi-select - users should filter by multiple labels
+2. Everyone uses labels, it's a core workflow
+3. Filter by 2+ labels and verify only matching tasks show
 
-**Claude:** [Spawns Technical + Business SME, then generates spec]
+**Claude:** [Generates spec, no additional SME needed - exploration was thorough]
+
+### Complex Initiative Example
+
+**User:** We need to add user authentication with role-based permissions
+
+**Claude:** Let me explore the codebase to understand the current architecture...
+
+*[Spawns explore agent]*
+
+**Claude:**
+```
+## Discovery: user-authentication-rbac
+
+### Codebase Exploration Complete
+
+**Complexity Assessment:** Complex Initiative
+
+**Technical Findings:**
+- Currently no auth - app assumes single user
+- Electron main process has no session management
+- All IPC handlers are unprotected
+- Database has no user_id foreign keys
+- 15+ API routes would need auth middleware
+
+**Scope:**
+- 20+ files across main process, renderer, and server
+- Touches: auth, database, API, UI
+
+**Key Challenges:**
+- Need to retrofit user_id to existing data models
+- Migration strategy for existing data
+- Session management in Electron context
+- Role definitions and permission checks
+
+**Recommended Approach:**
+Multi-phase rollout:
+1. Add User model and auth service
+2. Add middleware to IPC/API routes
+3. Retrofit existing models with user_id
+4. Add role-based permission checks
+5. Update UI for multi-user
+
+---
+
+This is a significant undertaking. Strategic questions:
+
+1. What authentication method? (local passwords, OAuth, SSO?)
+2. What roles do you need? (admin, member, viewer?)
+3. What's the migration plan for existing data?
+4. What are must-haves vs nice-to-haves for MVP?
+5. Any compliance requirements (SOC2, GDPR)?
+6. Timeline/phasing preferences?
+```
+
+**User:** [Provides answers to strategic questions]
+
+**Claude:** [Spawns Technical SME + Business SME for validation, then generates spec]
 
 ---
 
 ## Output
 
 After successful execution:
-- Brief record in `$DISCOVERY_DB` (`.parade/discovery.db` or `./discovery.db`) with complexity_level set
-- Interview questions and answers recorded
-- SME reviews in `sme_reviews` table (for standard/complex)
+- Brief record in `$DISCOVERY_DB` with `complexity_level` and `exploration_results` set
+- Exploration findings stored as JSON in brief
+- Interview questions and answers recorded (only questions that couldn't be answered by exploration)
+- SME reviews in `sme_reviews` table (for complex only, optional for standard)
 - Spec in `specs` table with status 'review'
 - Brief status updated to 'spec_ready'
 - User presented with spec for approval
 
 ---
 
-## Comparison with Legacy Skills
+## Key Improvements (Explore-First Flow)
 
-| Aspect | Legacy (/create-brief + /start-discovery) | New (/discover) |
-|--------|-------------------------------------------|-----------------|
-| Commands | 2 separate invocations | 1 unified command |
-| Questions | Sequential, one at a time | Batched, all at once |
-| Complexity | Not assessed | Quick/Standard/Complex |
-| SME agents | Always spawned | Adaptive (skip for quick) |
-| User effort | More back-and-forth | Streamlined |
+| Aspect | Previous Flow | New Explore-First Flow |
+|--------|---------------|------------------------|
+| First step | Ask user for complexity | Auto-explore codebase |
+| Complexity | User-assessed | Auto-assessed from exploration |
+| Technical questions | Asked to user | Answered by exploration |
+| User questions | 3-10 depending on complexity | Only what exploration couldn't answer |
+| SME agents | Required for standard/complex | Optional - exploration often sufficient |
+| Time to spec | Multiple rounds of Q&A | Single round after exploration |
+
+### Benefits
+
+1. **Reduced user burden** - Technical questions answered automatically
+2. **Better accuracy** - Complexity based on actual code analysis, not user estimate
+3. **Faster specs** - Exploration provides most context upfront
+4. **Smarter questions** - Only ask what the code can't tell us
+5. **Consistent quality** - Same exploration depth regardless of user expertise
