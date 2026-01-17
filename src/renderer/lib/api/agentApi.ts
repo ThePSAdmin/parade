@@ -19,8 +19,11 @@ export const agentApi = {
   },
 
   // List sessions
-  async listSessions(): Promise<AgentSession[]> {
-    const result = await api.get<ListSessionsResponse>('/api/agent/sessions');
+  async listSessions(projectPath?: string): Promise<AgentSession[]> {
+    const result = await api.get<ListSessionsResponse>(
+      '/api/agent/sessions',
+      projectPath ? { projectPath } : undefined
+    );
     if (result.error) throw new Error(result.error);
     return result.sessions;
   },

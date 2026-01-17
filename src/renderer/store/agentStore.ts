@@ -10,6 +10,15 @@ import type {
 import { agentApi } from '../lib/api/agentApi';
 import { wsClient } from '../lib/api/websocket';
 
+interface ProjectMismatchWarning {
+  sessionProjectPath: string;
+  currentProjectPath: string | null;
+  pendingMessage: string;
+}
+
+// Helper for localStorage keys
+const getInputStorageKey = (projectPath: string) => `agent-input-${projectPath}`;
+
 interface AgentState {
   // Skills
   skills: Skill[];
@@ -18,6 +27,7 @@ interface AgentState {
   // Sessions
   sessions: AgentSession[];
   activeSessionId: string | null;
+  activeProjectPath: string | null;
 
   // Messages for active session
   messages: AgentMessage[];
@@ -25,6 +35,7 @@ interface AgentState {
   // UI state
   isStreaming: boolean;
   pendingPermission: PermissionRequest | null;
+  pendingProjectMismatch: ProjectMismatchWarning | null;
   error: string | null;
 
   // Input state
@@ -36,6 +47,7 @@ interface AgentState {
   // Actions - Sessions
   fetchSessions: () => Promise<void>;
   setActiveSession: (sessionId: string | null) => void;
+  setActiveProjectPath: (projectPath: string | null) => void;
 
   // Actions - Running skills
   runSkill: (skillName: string, prompt?: string) => void;
@@ -45,6 +57,10 @@ interface AgentState {
   // Actions - Permissions
   approvePermission: (rememberForSession?: boolean) => void;
   denyPermission: () => void;
+
+  // Actions - Project mismatch
+  clearProjectMismatchWarning: () => void;
+  proceedWithMismatchedProject: () => void;
 
   // Actions - UI
   setInputValue: (value: string) => void;
@@ -60,9 +76,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   isLoadingSkills: false,
   sessions: [],
   activeSessionId: null,
+  activeProjectPath: null,
   messages: [],
   isStreaming: false,
   pendingPermission: null,
+  pendingProjectMismatch: null,
   error: null,
   inputValue: '',
 
@@ -84,7 +102,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   // Fetch sessions
   fetchSessions: async () => {
     try {
-      const sessions = await agentApi.listSessions();
+      const { activeProjectPath } = get();
+      const sessions = await agentApi.listSessions(activeProjectPath ?? undefined);
       set({ sessions });
     } catch (err) {
       set({
@@ -113,6 +132,33 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
+  // Set active project path
+  setActiveProjectPath: (projectPath) => {
+    const { activeProjectPath: oldPath, inputValue } = get();
+
+    // Save current input for old project
+    if (oldPath && inputValue) {
+      localStorage.setItem(getInputStorageKey(oldPath), inputValue);
+    }
+
+    // Restore input for new project (or empty string)
+    let restoredInput = '';
+    if (projectPath) {
+      restoredInput = localStorage.getItem(getInputStorageKey(projectPath)) || '';
+    }
+
+    set({
+      activeProjectPath: projectPath,
+      sessions: [],
+      activeSessionId: null,
+      messages: [],
+      inputValue: restoredInput,
+    });
+    if (projectPath) {
+      get().fetchSessions();
+    }
+  },
+
   // Run a skill via WebSocket for streaming
   runSkill: (skillName, prompt) => {
     set({ isStreaming: true, messages: [], error: null, pendingPermission: null });
@@ -121,10 +167,25 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   // Continue session with a new message
   continueSession: (message) => {
-    const { activeSessionId } = get();
+    const { activeSessionId, activeProjectPath, sessions } = get();
     if (!activeSessionId) {
       set({ error: 'No active session' });
       return;
+    }
+
+    // Check if session's projectPath matches activeProjectPath
+    const session = sessions.find((s) => s.id === activeSessionId);
+    if (session && session.projectPath !== activeProjectPath) {
+      // Mismatch - session belongs to different project
+      // Set a flag in state to show warning
+      set({
+        pendingProjectMismatch: {
+          sessionProjectPath: session.projectPath,
+          currentProjectPath: activeProjectPath,
+          pendingMessage: message,
+        },
+      });
+      return; // Don't proceed
     }
 
     // Add user message optimistically
@@ -143,6 +204,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       isStreaming: true,
       inputValue: '',
     }));
+
+    // Clear saved input when message is sent
+    if (activeProjectPath) {
+      localStorage.removeItem(getInputStorageKey(activeProjectPath));
+    }
 
     wsClient.continueSession(activeSessionId, message);
   },
@@ -183,8 +249,55 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({ pendingPermission: null });
   },
 
+  // Project mismatch actions
+  clearProjectMismatchWarning: () => {
+    set({ pendingProjectMismatch: null });
+  },
+
+  proceedWithMismatchedProject: () => {
+    const { pendingProjectMismatch, activeSessionId } = get();
+    if (!pendingProjectMismatch || !activeSessionId) return;
+
+    const { pendingMessage } = pendingProjectMismatch;
+
+    // Clear the warning
+    set({ pendingProjectMismatch: null });
+
+    // Add user message optimistically
+    const userMessage: AgentMessage = {
+      id: `user_${Date.now()}`,
+      sessionId: activeSessionId,
+      type: 'user',
+      timestamp: new Date().toISOString(),
+      content: {
+        type: 'user',
+        text: pendingMessage,
+      },
+    };
+    set((state) => ({
+      messages: [...state.messages, userMessage],
+      isStreaming: true,
+      inputValue: '',
+    }));
+
+    // Clear saved input when message is sent
+    const { activeProjectPath } = get();
+    if (activeProjectPath) {
+      localStorage.removeItem(getInputStorageKey(activeProjectPath));
+    }
+
+    // Proceed with the message despite the mismatch
+    wsClient.continueSession(activeSessionId, pendingMessage);
+  },
+
   // UI actions
-  setInputValue: (value) => set({ inputValue: value }),
+  setInputValue: (value) => {
+    const { activeProjectPath } = get();
+    set({ inputValue: value });
+    if (activeProjectPath) {
+      localStorage.setItem(getInputStorageKey(activeProjectPath), value);
+    }
+  },
   clearError: () => set({ error: null }),
 
   // Subscribe to WebSocket agent events

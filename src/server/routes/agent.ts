@@ -26,9 +26,10 @@ agentRouter.get('/skills', async (_req, res) => {
 });
 
 // List sessions
-agentRouter.get('/sessions', async (_req, res) => {
+agentRouter.get('/sessions', async (req, res) => {
   try {
-    const sessions = claudeAgentService.listSessions();
+    const projectPath = req.query.projectPath as string | undefined;
+    const sessions = claudeAgentService.listSessions(projectPath);
     const response: ListSessionsResponse = { sessions };
     res.json(response);
   } catch (err) {

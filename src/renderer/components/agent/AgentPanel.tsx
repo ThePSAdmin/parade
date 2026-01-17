@@ -24,6 +24,7 @@ import {
   useIsAgentStreaming,
   usePendingPermission,
 } from '../../store/agentStore';
+import { useBeadsStore } from '../../store/beadsStore';
 import { PermissionDialog } from './PermissionDialog';
 import { ToolCallViewer } from './ToolCallViewer';
 import type { AgentMessage, ToolCallContent, ToolResultContent } from '../../../shared/types/agent';
@@ -52,7 +53,11 @@ export function AgentPanel() {
   } = useAgentStore();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { activeSessionId } = useAgentStore();
+  const { activeSessionId, setActiveProjectPath } = useAgentStore();
+
+  // Get project state from beadsStore
+  const activeProjectId = useBeadsStore((state) => state.activeProjectId);
+  const projects = useBeadsStore((state) => state.projects);
 
   // Fetch skills and subscribe to events on mount
   useEffect(() => {
@@ -60,6 +65,16 @@ export function AgentPanel() {
     const unsubscribe = subscribeToAgentEvents();
     return () => unsubscribe();
   }, [fetchSkills, subscribeToAgentEvents]);
+
+  // Watch for project switches and update agentStore
+  useEffect(() => {
+    const activeProject = projects.find((p) => p.id === activeProjectId);
+    if (activeProject) {
+      setActiveProjectPath(activeProject.path);
+    } else {
+      setActiveProjectPath(null);
+    }
+  }, [activeProjectId, projects, setActiveProjectPath]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {

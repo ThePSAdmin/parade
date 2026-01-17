@@ -428,10 +428,16 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
   }
 
   /**
-   * Get all sessions
+   * Get all sessions, optionally filtered by project path
    */
-  listSessions(): AgentSession[] {
-    return Array.from(this.sessions.values()).map((s) => s.session);
+  listSessions(projectPath?: string): AgentSession[] {
+    const allSessions = Array.from(this.sessions.values()).map((s) => s.session);
+
+    if (projectPath) {
+      return allSessions.filter((session) => session.projectPath === projectPath);
+    }
+
+    return allSessions;
   }
 
   /**
@@ -458,7 +464,7 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
         prompt,
         options: {
           model: 'claude-sonnet-4-5',
-          cwd: this.projectPath!,
+          cwd: state.session.projectPath,
           abortController: state.abortController || undefined,
           ...(resumeSessionId && { resume: resumeSessionId }),
           // TEMPORARY: Bypass all permissions for testing
