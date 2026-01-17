@@ -1,6 +1,6 @@
 import { Routes, Route, NavLink, Navigate, useSearchParams } from 'react-router-dom';
 import { useState, useEffect, useCallback } from 'react';
-import { BarChart3, FileText, Kanban, Settings, FolderPlus, BookOpen, GraduationCap, Menu, X } from 'lucide-react';
+import { BarChart3, FileText, Kanban, Settings, FolderPlus, BookOpen, GraduationCap, Menu, X, Bot } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Label } from './components/ui/label';
 import { KanbanBoard, EpicListPanel, TaskDetailPanel } from './components/kanban';
@@ -8,6 +8,7 @@ import { PipelineBoard, BriefDetailView, AgentActivityPanel } from './components
 import { BriefsList, BriefFullDetail } from './components/briefs';
 import { DocsPage } from './components/docs/DocsPage';
 import { GuidePage } from './components/guide/GuidePage';
+import { AgentPanel } from './components/agent';
 import DragDropZone from './components/common/DragDropZone';
 import { ProjectChip } from './components/common/ProjectChip';
 import { ProjectTabBar } from './components/common/ProjectTabBar';
@@ -677,6 +678,20 @@ export default function App() {
             <GraduationCap className="w-5 h-5" />
             Guide
           </NavLink>
+          <NavLink
+            to="/agent"
+            onClick={closeSidebar}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isActive
+                  ? 'bg-sky-900/30 text-sky-400'
+                  : 'text-slate-400 hover:bg-slate-900'
+              }`
+            }
+          >
+            <Bot className="w-5 h-5" />
+            Agent
+          </NavLink>
         </div>
 
         {/* Bottom section */}
@@ -716,6 +731,7 @@ export default function App() {
           <Route path="/kanban" element={<KanbanView />} />
           <Route path="/docs" element={<DocsPage />} />
           <Route path="/guide" element={<GuidePage />} />
+          <Route path="/agent" element={<AgentPanel />} />
           <Route path="/settings" element={<SettingsView />} />
         </Routes>
       </main>

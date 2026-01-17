@@ -1,6 +1,18 @@
 // WebSocket client for real-time updates (web mode)
 
+import type {
+  AgentServerMessage,
+  AgentClientMessage,
+  AgentMessage,
+  PermissionRequest,
+} from '../../../shared/types/agent';
+
 type EventCallback = () => void;
+type AgentMessageCallback = (sessionId: string, message: AgentMessage) => void;
+type AgentPermissionCallback = (sessionId: string, permission: PermissionRequest) => void;
+type AgentCompleteCallback = (sessionId: string, status: 'success' | 'error' | 'cancelled', error?: string) => void;
+type AgentSessionStartedCallback = (sessionId: string) => void;
+type AgentErrorCallback = (error: string) => void;
 
 class ParadeWebSocket {
   private ws: WebSocket | null = null;
@@ -10,6 +22,13 @@ class ParadeWebSocket {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private reconnectDelay = 1000;
+
+  // Agent-specific listeners
+  private agentMessageListeners = new Set<AgentMessageCallback>();
+  private agentPermissionListeners = new Set<AgentPermissionCallback>();
+  private agentCompleteListeners = new Set<AgentCompleteCallback>();
+  private agentSessionStartedListeners = new Set<AgentSessionStartedCallback>();
+  private agentErrorListeners = new Set<AgentErrorCallback>();
 
   connect() {
     if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.OPEN)) {
@@ -37,6 +56,14 @@ class ParadeWebSocket {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+
+          // Handle agent-specific messages
+          if (data.type?.startsWith('agent:')) {
+            this.handleAgentMessage(data as AgentServerMessage | { type: 'agent:session_started'; sessionId: string } | { type: 'agent:error'; error: string });
+            return;
+          }
+
+          // Handle standard event messages
           const handlers = this.listeners.get(data.type);
           if (handlers) {
             handlers.forEach((cb) => cb());
@@ -123,6 +150,89 @@ class ParadeWebSocket {
 
   onDiscoveryChange(callback: EventCallback): () => void {
     return this.on('discovery:changed', callback);
+  }
+
+  // Agent methods
+  private handleAgentMessage(data: AgentServerMessage | { type: 'agent:session_started'; sessionId: string } | { type: 'agent:error'; error: string }) {
+    switch (data.type) {
+      case 'agent:message':
+        this.agentMessageListeners.forEach((cb) => cb(data.sessionId, data.message));
+        break;
+      case 'agent:permission_request':
+        this.agentPermissionListeners.forEach((cb) => cb(data.sessionId, data.permission));
+        break;
+      case 'agent:complete':
+        this.agentCompleteListeners.forEach((cb) => cb(data.sessionId, data.status, data.error));
+        break;
+      case 'agent:session_started':
+        this.agentSessionStartedListeners.forEach((cb) => cb(data.sessionId));
+        break;
+      case 'agent:error':
+        this.agentErrorListeners.forEach((cb) => cb(data.error));
+        break;
+    }
+  }
+
+  // Send a message to the server
+  send(message: AgentClientMessage): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    } else {
+      console.error('WebSocket not connected, cannot send message');
+    }
+  }
+
+  // Agent event subscriptions
+  onAgentMessage(callback: AgentMessageCallback): () => void {
+    this.agentMessageListeners.add(callback);
+    return () => {
+      this.agentMessageListeners.delete(callback);
+    };
+  }
+
+  onAgentPermissionRequest(callback: AgentPermissionCallback): () => void {
+    this.agentPermissionListeners.add(callback);
+    return () => {
+      this.agentPermissionListeners.delete(callback);
+    };
+  }
+
+  onAgentComplete(callback: AgentCompleteCallback): () => void {
+    this.agentCompleteListeners.add(callback);
+    return () => {
+      this.agentCompleteListeners.delete(callback);
+    };
+  }
+
+  onAgentSessionStarted(callback: AgentSessionStartedCallback): () => void {
+    this.agentSessionStartedListeners.add(callback);
+    return () => {
+      this.agentSessionStartedListeners.delete(callback);
+    };
+  }
+
+  onAgentError(callback: AgentErrorCallback): () => void {
+    this.agentErrorListeners.add(callback);
+    return () => {
+      this.agentErrorListeners.delete(callback);
+    };
+  }
+
+  // Send agent commands
+  runSkill(skill: string, prompt?: string, args?: Record<string, unknown>): void {
+    this.send({ type: 'agent:run', skill, prompt, args });
+  }
+
+  continueSession(sessionId: string, message: string): void {
+    this.send({ type: 'agent:continue', sessionId, message });
+  }
+
+  respondToPermission(sessionId: string, requestId: string, decision: 'approve' | 'deny', rememberForSession?: boolean): void {
+    this.send({ type: 'agent:permission', sessionId, requestId, decision, rememberForSession });
+  }
+
+  cancelSession(sessionId: string): void {
+    this.send({ type: 'agent:cancel', sessionId });
   }
 }
 

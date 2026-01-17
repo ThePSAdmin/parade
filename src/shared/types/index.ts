@@ -1,3 +1,4 @@
+export * from './agent';
 export * from './beads';
 export * from './ipc';
 export * from './discovery';

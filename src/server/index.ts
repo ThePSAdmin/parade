@@ -15,6 +15,7 @@ import { docsService } from '../main/services/docs';
 import { fileWatcherService } from '../main/services/fileWatcher';
 // Import server-specific settings service (doesn't use Electron)
 import { serverSettingsService } from './services/settings';
+import { claudeAgentService } from './services/claudeAgent';
 
 // Import routes
 import { beadsRouter } from './routes/beads';
@@ -24,6 +25,10 @@ import { docsRouter } from './routes/docs';
 import { settingsRouter } from './routes/settings';
 import { projectRouter } from './routes/project';
 import { filesystemRouter } from './routes/filesystem';
+import { agentRouter } from './routes/agent';
+
+// Import agent types
+import type { AgentClientMessage } from '../shared/types/agent';
 
 const app = express();
 const server = createServer(app);
@@ -46,6 +51,7 @@ app.use('/api/docs', docsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/project', projectRouter);
 app.use('/api/filesystem', filesystemRouter);
+app.use('/api/agent', agentRouter);
 
 // App info endpoint (replaces Electron app.getVersion)
 app.get('/api/app/version', (_req, res) => {
@@ -95,6 +101,15 @@ wss.on('connection', (ws) => {
   clients.add(ws);
   console.log('WebSocket client connected. Total:', clients.size);
 
+  ws.on('message', (data) => {
+    try {
+      const message = JSON.parse(data.toString()) as AgentClientMessage;
+      handleAgentMessage(ws, message);
+    } catch (err) {
+      console.error('Failed to parse WebSocket message:', err);
+    }
+  });
+
   ws.on('close', () => {
     clients.delete(ws);
     console.log('WebSocket client disconnected. Total:', clients.size);
@@ -106,9 +121,65 @@ wss.on('connection', (ws) => {
   });
 });
 
+// Handle agent-related WebSocket messages
+async function handleAgentMessage(ws: WebSocket, message: AgentClientMessage) {
+  try {
+    switch (message.type) {
+      case 'agent:run': {
+        const sessionId = await claudeAgentService.run(
+          message.skill,
+          message.prompt,
+          message.args
+        );
+        ws.send(
+          JSON.stringify({
+            type: 'agent:session_started',
+            sessionId,
+          })
+        );
+        break;
+      }
+      case 'agent:continue': {
+        await claudeAgentService.continue(message.sessionId, message.message);
+        break;
+      }
+      case 'agent:permission': {
+        await claudeAgentService.respondToPermission(
+          message.sessionId,
+          message.requestId,
+          message.decision,
+          message.rememberForSession
+        );
+        break;
+      }
+      case 'agent:cancel': {
+        await claudeAgentService.cancel(message.sessionId);
+        break;
+      }
+    }
+  } catch (err) {
+    ws.send(
+      JSON.stringify({
+        type: 'agent:error',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      })
+    );
+  }
+}
+
 // Broadcast to all connected WebSocket clients
 function broadcast(type: string) {
   const message = JSON.stringify({ type });
+  clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+}
+
+// Broadcast JSON data to all connected WebSocket clients
+function broadcastJson(data: object) {
+  const message = JSON.stringify(data);
   clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(message);
@@ -123,6 +194,32 @@ fileWatcherService.on('change', (event) => {
   } else if (event.type === 'beads') {
     broadcast('beads:changed');
   }
+});
+
+// Wire agent service events to WebSocket broadcasts
+claudeAgentService.on('message', (sessionId, message) => {
+  broadcastJson({
+    type: 'agent:message',
+    sessionId,
+    message,
+  });
+});
+
+claudeAgentService.on('permission_request', (sessionId, permission) => {
+  broadcastJson({
+    type: 'agent:permission_request',
+    sessionId,
+    permission,
+  });
+});
+
+claudeAgentService.on('complete', (sessionId, status, error) => {
+  broadcastJson({
+    type: 'agent:complete',
+    sessionId,
+    status,
+    error,
+  });
 });
 
 // Initialize services with project path
@@ -143,6 +240,7 @@ function initializeServices(projectPath: string) {
   discoveryService.setDatabasePath(discoveryDbPath);
   telemetryService.setDatabasePath(discoveryDbPath);
   docsService.setProjectPath(projectPath);
+  claudeAgentService.setProjectPath(projectPath);
 
   // Start file watchers
   fileWatcherService.stopAll();
