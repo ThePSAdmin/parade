@@ -106,24 +106,14 @@ export function AgentPanel() {
   const handleSend = () => {
     if (!inputValue.trim()) return;
 
-    // Check for slash commands
+    // Check for slash commands - pass directly to SDK which handles both
+    // built-in commands (/help, /clear, etc.) and custom skills (/discover, etc.)
     const slashCommand = parseSlashCommand(inputValue);
     if (slashCommand) {
-      // Validate skill exists
-      const matchedSkill = skills.find((s) => s.name === slashCommand.skillName);
-      if (matchedSkill) {
-        // Run the skill (this cancels any active session and starts fresh)
-        runSkill(matchedSkill.name, slashCommand.args);
-        setInputValue('');
-        return;
-      } else {
-        // Show error for unknown command
-        const availableSkills = skills.map((s) => s.name).join(', ');
-        useAgentStore.getState().setError(
-          `Unknown command: /${slashCommand.skillName}. Available: ${availableSkills}`
-        );
-        return;
-      }
+      // Run the command via SDK - it handles validation and invocation
+      runSkill(slashCommand.skillName, slashCommand.args);
+      setInputValue('');
+      return;
     }
 
     if (activeSessionId) {

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDiscoveryStore, useSelectedBrief } from '../../store/discoveryStore';
 import { useBeadsStore } from '../../store/beadsStore';
+import wsClient from '@renderer/lib/api/websocket';
 import { Card, CardContent } from '@renderer/components/ui/card';
 import { Badge } from '@renderer/components/ui/badge';
 import { ScrollArea } from '@renderer/components/ui/scroll-area';
@@ -14,8 +15,19 @@ import {
   AlertTriangle,
   Loader2,
   ArrowRight,
+  CheckCircle2,
+  Play,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@renderer/components/ui/dialog';
 import type { Issue } from '../../../shared/types/beads';
+import { RetroSuggestionsModal } from './RetroSuggestionsModal';
 
 /**
  * Format a duration to a human-readable string
@@ -203,6 +215,18 @@ export default function BriefDetailView() {
     specDetails: false,
   });
 
+  // Track approval state
+  const [isApproving, setIsApproving] = useState(false);
+
+  // Track retro modal state
+  const [showRetroModal, setShowRetroModal] = useState(false);
+  const [retroSuggestions, setRetroSuggestions] = useState<string[]>([]);
+  const [hasTriggeredRetro, setHasTriggeredRetro] = useState(false);
+
+  // Track start tasks state
+  const [showStartTasksConfirm, setShowStartTasksConfirm] = useState(false);
+  const [isStartingTasks, setIsStartingTasks] = useState(false);
+
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({
       ...prev,
@@ -215,6 +239,50 @@ export default function BriefDetailView() {
     if (selectedBrief?.brief.exported_epic_id) {
       navigate(`/kanban?epicId=${encodeURIComponent(selectedBrief.brief.exported_epic_id)}`);
     }
+  };
+
+  // Handle spec approval - runs approve-spec skill with session resume
+  const handleApproveSpec = () => {
+    if (!selectedBrief?.spec) return;
+    setIsApproving(true);
+
+    const resumeSessionId = selectedBrief.brief.sdk_session_id ?? undefined;
+    // Run approve-spec skill with spec title and resume session
+    wsClient.runSkill(
+      'approve-spec',
+      selectedBrief.spec.title,
+      undefined,
+      'discovery', // sessionType
+      resumeSessionId
+    );
+
+    // Note: isApproving will be reset by websocket completion handler
+  };
+
+  // Handle spec rejection
+  const handleRejectSpec = () => {
+    // For now, just show a message or trigger spec revision
+    // Future: increment rejection count, re-run discovery
+    console.log('Spec rejected - revision needed');
+  };
+
+  // Handle starting tasks - runs run-tasks skill with session resume
+  const handleStartTasks = () => {
+    if (!selectedBrief?.brief.exported_epic_id) return;
+    setIsStartingTasks(true);
+
+    const resumeSessionId = selectedBrief.brief.sdk_session_id ?? undefined;
+    // Run run-tasks skill with epic ID and resume session
+    wsClient.runSkill(
+      'run-tasks',
+      selectedBrief.brief.exported_epic_id,
+      undefined,
+      'discovery',
+      resumeSessionId
+    );
+
+    setShowStartTasksConfirm(false);
+    // Note: isStartingTasks will be reset by websocket completion handler
   };
 
   // Fetch child tasks when an exported brief is selected
@@ -232,6 +300,53 @@ export default function BriefDetailView() {
       selectedBrief.brief.updated_at || selectedBrief.brief.created_at;
     return formatTimeInStage(dateToUse);
   }, [selectedBrief]);
+
+  // Calculate if epic is complete (all children closed)
+  const isEpicComplete = useMemo(() => {
+    if (!selectedBrief?.brief.exported_epic_id || childTasks.length === 0) {
+      return false;
+    }
+    return childTasks.every((task) => task.status === 'closed');
+  }, [selectedBrief?.brief.exported_epic_id, childTasks]);
+
+  // Effect to trigger retro when epic completes
+  useEffect(() => {
+    if (isEpicComplete && !hasTriggeredRetro && selectedBrief?.brief.sdk_session_id) {
+      setHasTriggeredRetro(true);
+
+      // Run retro with session resume
+      wsClient.runSkill(
+        'retro',
+        selectedBrief.brief.exported_epic_id!,
+        undefined,
+        'discovery',
+        selectedBrief.brief.sdk_session_id
+      );
+
+      // TODO: Listen for retro completion via WebSocket and parse suggestions
+      // For now, show modal with placeholder
+      // In production, suggestions would come from agent response
+      setTimeout(() => {
+        setRetroSuggestions([
+          'Consider adding more unit tests for edge cases',
+          'Document the new API endpoints',
+          'Review error handling patterns',
+        ]);
+        setShowRetroModal(true);
+      }, 2000);
+    }
+  }, [isEpicComplete, hasTriggeredRetro, selectedBrief]);
+
+  // Handlers for retro modal
+  const handleApproveRetro = (selectedSuggestions: string[]) => {
+    console.log('Approved suggestions:', selectedSuggestions);
+    // TODO: Apply suggestions (create follow-up tasks, update docs, etc.)
+    setShowRetroModal(false);
+  };
+
+  const handleDismissRetro = () => {
+    setShowRetroModal(false);
+  };
 
   if (!selectedBrief) {
     return (
@@ -277,6 +392,40 @@ export default function BriefDetailView() {
             View Tasks
             <ArrowRight className="w-4 h-4" />
           </Button>
+        )}
+
+        {/* Start Tasks button for exported briefs that are not complete */}
+        {hasExportedEpic && !isEpicComplete && (
+          <Button
+            onClick={() => setShowStartTasksConfirm(true)}
+            disabled={isStartingTasks}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2"
+          >
+            {isStartingTasks ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Starting Tasks...
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4" />
+                Start Tasks
+              </>
+            )}
+          </Button>
+        )}
+
+        {/* Epic Complete Indicator */}
+        {isEpicComplete && (
+          <Card className="bg-emerald-900/20 border-emerald-700">
+            <CardContent className="p-4 flex items-center gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              <div>
+                <p className="font-medium text-emerald-300">Epic Complete!</p>
+                <p className="text-sm text-emerald-400/70">All tasks have been closed.</p>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Task Summary Section for exported briefs */}
@@ -371,10 +520,74 @@ export default function BriefDetailView() {
               <Badge variant="outline" className="bg-slate-800 text-slate-400 border-slate-700">
                 {selectedBrief.spec!.status}
               </Badge>
+
+              {/* Approve/Reject buttons for specs not yet approved or exported */}
+              {selectedBrief.spec!.status !== 'approved' && selectedBrief.spec!.status !== 'exported' && (
+                <div className="flex gap-2 mt-4">
+                  <Button
+                    onClick={handleRejectSpec}
+                    variant="outline"
+                    className="flex-1 border-red-600 text-red-400 hover:bg-red-600/10"
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    onClick={handleApproveSpec}
+                    disabled={isApproving}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    {isApproving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Approving...
+                      </>
+                    ) : (
+                      'Approve Spec'
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
           </CollapsibleSection>
         )}
       </div>
+
+      {/* Start Tasks Confirmation Dialog */}
+      <Dialog open={showStartTasksConfirm} onOpenChange={setShowStartTasksConfirm}>
+        <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="text-slate-100">Start Task Execution?</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              This will begin running tasks for this epic using AI agents.
+              Tasks will be executed in parallel batches based on their dependencies.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowStartTasksConfirm(false)}
+              className="border-slate-700 text-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleStartTasks}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              Start Tasks
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Retro Suggestions Modal */}
+      <RetroSuggestionsModal
+        open={showRetroModal}
+        onOpenChange={setShowRetroModal}
+        suggestions={retroSuggestions}
+        onApprove={handleApproveRetro}
+        onDismiss={handleDismissRetro}
+      />
     </ScrollArea>
   );
 }

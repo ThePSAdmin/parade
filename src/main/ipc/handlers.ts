@@ -253,6 +253,20 @@ export function registerIpcHandlers() {
     return discoveryService.getDatabasePath();
   });
 
+  // Discovery: Set SDK session ID for a brief
+  ipcMain.handle(
+    IPC_CHANNELS.DISCOVERY.SET_SDK_SESSION,
+    async (_, briefId: string, sdkSessionId: string) => {
+      try {
+        discoveryService.setSdkSessionId(briefId, sdkSessionId);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to set SDK session ID:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   // ==========================================================================
   // Docs handlers
   // ==========================================================================

@@ -72,6 +72,12 @@ export const discoveryApi = {
     const result = await api.get<{ path: string | null }>('/api/discovery/config/db-path');
     return result.path;
   },
+
+  async setSdkSessionId(briefId: string, sdkSessionId: string): Promise<{ success: boolean; error?: string }> {
+    return api.post<{ success: boolean; error?: string }>(`/api/discovery/briefs/${briefId}/sdk-session`, {
+      sdkSessionId,
+    });
+  },
 };
 
 export default discoveryApi;

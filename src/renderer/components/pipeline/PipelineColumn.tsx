@@ -3,11 +3,13 @@ import BriefCard from './BriefCard';
 import { ScrollArea } from '@renderer/components/ui/scroll-area';
 import { Badge } from '@renderer/components/ui/badge';
 import { StatusIcons } from '@renderer/lib/iconMap';
+import { Plus } from 'lucide-react';
 
 interface PipelineColumnProps {
   title: string;
   status: BriefStatus;
   briefs: Brief[];
+  onAddClick?: () => void;
 }
 
 const statusConfig: Record<BriefStatus, { color: string }> = {
@@ -21,7 +23,7 @@ const statusConfig: Record<BriefStatus, { color: string }> = {
   canceled: { color: 'text-red-500' },
 };
 
-export default function PipelineColumn({ title, status, briefs }: PipelineColumnProps) {
+export default function PipelineColumn({ title, status, briefs, onAddClick }: PipelineColumnProps) {
   const config = statusConfig[status];
   const StatusIcon = StatusIcons[status];
 
@@ -32,6 +34,15 @@ export default function PipelineColumn({ title, status, briefs }: PipelineColumn
         <div className="flex items-center gap-2">
           <StatusIcon className={`w-4 h-4 ${config.color}`} />
           <span className="text-slate-100">{title}</span>
+          {onAddClick && (
+            <button
+              onClick={onAddClick}
+              className="p-1 rounded hover:bg-slate-700 transition-colors text-slate-400 hover:text-slate-100"
+              aria-label="Add new brief"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          )}
           <Badge variant="secondary" className="ml-auto bg-slate-800 text-slate-400 border-slate-700">
             {briefs.length}
           </Badge>

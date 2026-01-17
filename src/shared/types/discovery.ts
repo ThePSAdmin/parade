@@ -120,6 +120,8 @@ export interface Brief {
   updated_at: string | null;
   /** ID of exported epic in beads (if exported) */
   exported_epic_id: string | null;
+  /** Claude Code SDK session ID for conversation persistence */
+  sdk_session_id: string | null;
 }
 
 /**

@@ -2,6 +2,9 @@
  * Shared types for Claude Agent SDK integration
  */
 
+// Session type for routing messages
+export type SessionType = 'discovery' | 'general';
+
 // Session types
 export interface AgentSession {
   id: string;
@@ -137,6 +140,8 @@ export interface AgentRunMessage {
   skill: string;
   args?: Record<string, unknown>;
   prompt?: string;
+  sessionType?: SessionType;
+  resumeSessionId?: string;
 }
 
 export interface AgentContinueMessage {

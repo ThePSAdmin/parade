@@ -64,6 +64,7 @@ interface AgentState {
 
   // Actions - UI
   setInputValue: (value: string) => void;
+  setError: (error: string) => void;
   clearError: () => void;
 
   // Event subscription
@@ -298,6 +299,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       localStorage.setItem(getInputStorageKey(activeProjectPath), value);
     }
   },
+  setError: (error) => set({ error }),
   clearError: () => set({ error: null }),
 
   // Subscribe to WebSocket agent events

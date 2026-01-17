@@ -19,6 +19,7 @@ import type { SetupStatus } from '../shared/types/ipc';
 import { useBeadsStore } from './store/beadsStore';
 import discoveryClient from './lib/discoveryClient';
 import { settings, dialog, project as projectApi } from './lib/electronClient';
+import { useTheme } from './hooks/useTheme';
 
 // Briefs view with list and detail panels
 function BriefsView() {
@@ -507,9 +508,19 @@ export default function App() {
   const [isFirstLaunch, setIsFirstLaunch] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { projects, activeProjectId, setActiveProject, isSwitchingProject } = useBeadsStore();
+  const { resolvedTheme } = useTheme();
 
   // Close sidebar when route changes (mobile)
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+
+  // Apply dark class to HTML element based on resolved theme
+  useEffect(() => {
+    if (resolvedTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [resolvedTheme]);
 
   // Initialize stores on app startup - runs only once
   useEffect(() => {
