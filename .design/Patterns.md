@@ -512,7 +512,186 @@ async function performAction(): Promise<Result> {
 
 | Pattern | Description | Location | Added |
 |---------|-------------|----------|-------|
-| - | No feature patterns yet | - | - |
+| Input Autocomplete | Dropdown autocomplete triggered by input text | `SlashCommandAutocomplete.tsx` | 2026-01-17 |
+| useAllCommands | Hook composition merging static + dynamic data | `useAllCommands.ts` | 2026-01-17 |
+
+---
+
+### Input Autocomplete Pattern
+
+For dropdowns triggered by input text (e.g., slash commands, mentions, tags).
+
+```typescript
+interface AutocompleteProps {
+  value: string;
+  onChange: (value: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}
+
+export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(
+  ({ value, onChange, onKeyDown, placeholder, disabled }, ref) => {
+    const items = useItems(); // Your data source
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    const [showDropdown, setShowDropdown] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    // Filter items based on trigger (e.g., "/" prefix)
+    const filtered = useMemo(() => {
+      if (!value.startsWith('/')) return [];
+      const query = value.slice(1).toLowerCase();
+      return items.filter(item => item.name.toLowerCase().startsWith(query));
+    }, [value, items]);
+
+    // Show/hide dropdown based on filtered results
+    useEffect(() => {
+      setShowDropdown(filtered.length > 0);
+      setSelectedIndex(0);
+    }, [filtered.length]);
+
+    // Click-outside dismissal
+    useEffect(() => {
+      const handleClickOutside = (e: MouseEvent) => {
+        if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+          setShowDropdown(false);
+        }
+      };
+      if (showDropdown) {
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+      }
+    }, [showDropdown]);
+
+    // Keyboard navigation
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (showDropdown && filtered.length > 0) {
+        switch (e.key) {
+          case 'ArrowDown':
+            e.preventDefault();
+            setSelectedIndex(prev => (prev + 1) % filtered.length);
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            setSelectedIndex(prev => (prev - 1 + filtered.length) % filtered.length);
+            break;
+          case 'Tab':
+          case 'Enter':
+            e.preventDefault();
+            onChange(`/${filtered[selectedIndex].name} `);
+            setShowDropdown(false);
+            break;
+          case 'Escape':
+            e.preventDefault();
+            setShowDropdown(false);
+            break;
+        }
+      }
+      onKeyDown?.(e);
+    };
+
+    return (
+      <div ref={containerRef} className="relative w-full">
+        {showDropdown && (
+          <div
+            role="listbox"
+            className="absolute bottom-full left-0 mb-2 w-full bg-slate-800 border border-slate-700 rounded-md shadow-lg max-h-[200px] overflow-y-auto z-50"
+          >
+            {filtered.map((item, index) => (
+              <div
+                key={item.name}
+                role="option"
+                aria-selected={index === selectedIndex}
+                className={`px-3 py-2 cursor-pointer ${index === selectedIndex ? 'bg-slate-700' : 'hover:bg-slate-700'}`}
+                onClick={() => { onChange(`/${item.name} `); setShowDropdown(false); }}
+                onMouseEnter={() => setSelectedIndex(index)}
+              >
+                <span className="font-medium">/{item.name}</span>
+                <p className="text-sm text-slate-400 truncate">{item.description}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        <Input
+          ref={ref}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          disabled={disabled}
+          role="combobox"
+          aria-expanded={showDropdown}
+          aria-haspopup="listbox"
+        />
+      </div>
+    );
+  }
+);
+```
+
+**Key elements:**
+1. `forwardRef` for ref forwarding to input
+2. `useMemo` for filtered results
+3. `useEffect` for click-outside handling
+4. Keyboard: ArrowUp/Down, Tab/Enter, Escape
+5. ARIA: `role="combobox"`, `role="listbox"`, `role="option"`, `aria-selected`
+6. Position: `absolute bottom-full` for above-input placement
+
+**Reference implementation:** `src/renderer/components/agent/SlashCommandAutocomplete.tsx`
+
+**Source:** Epic customTaskTracker-2go (2026-01-17)
+
+---
+
+### useAllCommands Hook
+
+Hook composition pattern for merging static constants with dynamic store data.
+
+```typescript
+import { useMemo } from 'react';
+import { BUILT_IN_COMMANDS } from '@shared/constants/claudeCommands';
+import { useAgentSkills } from '../store/agentStore';
+
+export interface Command {
+  name: string;
+  description: string;
+  category: 'builtin' | 'skill';
+}
+
+export function useAllCommands(): Command[] {
+  const skills = useAgentSkills();
+
+  return useMemo(() => {
+    const builtInCommands: Command[] = BUILT_IN_COMMANDS.map((cmd) => ({
+      name: cmd.name,
+      description: cmd.description,
+      category: 'builtin' as const,
+    }));
+
+    const skillCommands: Command[] = skills.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      category: 'skill' as const,
+    }));
+
+    return [...builtInCommands, ...skillCommands].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [skills]);
+}
+```
+
+**Key elements:**
+1. Merge static constants with dynamic store data
+2. Normalize to unified interface with category tagging
+3. `useMemo` for efficient recalculation only when dependencies change
+4. Sort for consistent ordering
+
+**When to use:** When you need to combine data from multiple sources (constants, store, API) into a unified typed array.
+
+**Reference implementation:** `src/renderer/hooks/useAllCommands.ts`
+
+**Source:** Epic customTaskTracker-2go (2026-01-17)
 
 ---
 

@@ -269,7 +269,29 @@ interface SMEFindings {
 
 | Field | Type | Values | Description | Added |
 |-------|------|--------|-------------|-------|
-| - | - | - | No feature fields yet | - |
+| `BuiltInCommand` | `interface` | `{ name, description }` | Claude Code CLI command metadata | customTaskTracker-2go |
+| `Command` | `interface` | `{ name, description, category }` | Unified command for autocomplete | customTaskTracker-2go |
+
+### BuiltInCommand
+
+```typescript
+// src/shared/constants/claudeCommands.ts
+interface BuiltInCommand {
+  name: string;        // Command name without leading /
+  description: string; // Brief description (< 60 chars)
+}
+```
+
+### Command (Autocomplete)
+
+```typescript
+// src/renderer/hooks/useAllCommands.ts
+interface Command {
+  name: string;
+  description: string;
+  category: 'builtin' | 'skill';  // Distinguishes source
+}
+```
 
 ---
 

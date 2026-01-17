@@ -303,4 +303,46 @@ transition-all // All properties (bg, border, shadow)
 
 ---
 
+## Feature Components
+
+Custom components built for specific features.
+
+### SlashCommandAutocomplete
+
+Input component with slash command autocomplete. Shows dropdown above input when user types `/`.
+
+**Location:** `src/renderer/components/agent/SlashCommandAutocomplete.tsx`
+
+**Usage:**
+```tsx
+import { SlashCommandAutocomplete } from './SlashCommandAutocomplete';
+
+<SlashCommandAutocomplete
+  value={inputValue}
+  onChange={setInputValue}
+  placeholder="Type / for commands..."
+  disabled={isLoading}
+/>
+```
+
+**Features:**
+- Keyboard navigation (Arrow keys, Tab/Enter, Escape)
+- Click-outside dismissal
+- ARIA accessibility attributes (`role="combobox"`, `role="listbox"`)
+- Category badges (builtin vs skill)
+- Prefix filtering with `useMemo`
+
+**Props:**
+| Prop | Type | Description |
+|------|------|-------------|
+| `value` | `string` | Current input value |
+| `onChange` | `(value: string) => void` | Value change handler |
+| `onKeyDown` | `(e: KeyboardEvent) => void` | Optional key handler passthrough |
+| `placeholder` | `string` | Input placeholder text |
+| `disabled` | `boolean` | Disable input |
+
+**Added**: Epic customTaskTracker-2go, 2026-01-17
+
+---
+
 *Updated for shadcn/ui implementation*

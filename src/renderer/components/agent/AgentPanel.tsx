@@ -2,10 +2,10 @@
 
 import { useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
 import { ScrollArea } from '../ui/scroll-area';
 import { Separator } from '../ui/separator';
 import { Badge } from '../ui/badge';
+import { SlashCommandAutocomplete } from './SlashCommandAutocomplete';
 import {
   Bot,
   Send,
@@ -31,6 +31,28 @@ import type { AgentMessage, ToolCallContent, ToolResultContent } from '../../../
 
 // Quick action skills to show as buttons
 const QUICK_SKILLS = ['discover', 'run-tasks', 'approve-spec', 'retro'];
+
+/**
+ * Parse a slash command from user input
+ * Returns { skillName, args } if input starts with /, null otherwise
+ */
+function parseSlashCommand(input: string): { skillName: string; args?: string } | null {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith('/')) return null;
+
+  // Remove leading / and split on first space
+  const withoutSlash = trimmed.slice(1);
+  const spaceIndex = withoutSlash.indexOf(' ');
+
+  if (spaceIndex === -1) {
+    return { skillName: withoutSlash };
+  }
+
+  return {
+    skillName: withoutSlash.slice(0, spaceIndex),
+    args: withoutSlash.slice(spaceIndex + 1).trim() || undefined,
+  };
+}
 
 export function AgentPanel() {
   const skills = useAgentSkills();
@@ -83,6 +105,27 @@ export function AgentPanel() {
 
   const handleSend = () => {
     if (!inputValue.trim()) return;
+
+    // Check for slash commands
+    const slashCommand = parseSlashCommand(inputValue);
+    if (slashCommand) {
+      // Validate skill exists
+      const matchedSkill = skills.find((s) => s.name === slashCommand.skillName);
+      if (matchedSkill) {
+        // Run the skill (this cancels any active session and starts fresh)
+        runSkill(matchedSkill.name, slashCommand.args);
+        setInputValue('');
+        return;
+      } else {
+        // Show error for unknown command
+        const availableSkills = skills.map((s) => s.name).join(', ');
+        useAgentStore.getState().setError(
+          `Unknown command: /${slashCommand.skillName}. Available: ${availableSkills}`
+        );
+        return;
+      }
+    }
+
     if (activeSessionId) {
       // Continue existing session
       continueSession(inputValue.trim());
@@ -295,10 +338,10 @@ export function AgentPanel() {
       {/* Input */}
       <div className="p-4">
         <div className="flex gap-2">
-          <Input
-            placeholder="Type a message..."
+          <SlashCommandAutocomplete
+            placeholder="Type / for commands or ask a question..."
             value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            onChange={setInputValue}
             onKeyDown={handleKeyDown}
             disabled={isStreaming || !!pendingPermission}
           />

@@ -5,13 +5,13 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { EventEmitter } from 'events';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import type {
   AgentSession,
   AgentMessage,
   PermissionRequest,
   Skill,
-  PermissionType,
 } from '../../shared/types/agent';
 
 interface SessionState {
@@ -21,6 +21,7 @@ interface SessionState {
   pendingPermissionResolve: ((decision: 'approve' | 'deny') => void) | null;
   approvedPermissions: Set<string>; // Permission types approved for session
   abortController: AbortController | null;
+  sdkSessionId: string | null; // The SDK's conversation ID, used for resume
 }
 
 type AgentEventMap = {
@@ -38,57 +39,72 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
   }
 
   /**
-   * List available skills from .claude/skills/ directory
+   * List available skills from both global and project-local directories
+   * Scans ~/.claude/skills/ (global) and ./.claude/skills/ (project)
+   * Project skills take precedence over global skills with the same name
    */
   async listSkills(): Promise<Skill[]> {
     if (!this.projectPath) {
       throw new Error('Project path not set');
     }
 
-    const skillsDir = path.join(this.projectPath, '.claude', 'skills');
-    if (!fs.existsSync(skillsDir)) {
-      return [];
-    }
+    const skillsMap = new Map<string, Skill>();
 
-    const skills: Skill[] = [];
-    const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+    // Helper to scan a skills directory and add to map
+    const scanSkillsDir = (skillsDir: string): void => {
+      if (!fs.existsSync(skillsDir)) {
+        return;
+      }
 
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const skillPath = path.join(skillsDir, entry.name, 'SKILL.md');
-        if (fs.existsSync(skillPath)) {
-          const content = fs.readFileSync(skillPath, 'utf-8');
-          // Extract description from first paragraph after title
-          const lines = content.split('\n');
-          let description = '';
-          for (const line of lines) {
-            if (line.startsWith('#')) continue;
-            if (line.trim()) {
-              description = line.trim();
-              break;
+      const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const skillPath = path.join(skillsDir, entry.name, 'SKILL.md');
+          if (fs.existsSync(skillPath)) {
+            const content = fs.readFileSync(skillPath, 'utf-8');
+            // Extract description from first paragraph after title
+            const lines = content.split('\n');
+            let description = '';
+            for (const line of lines) {
+              if (line.startsWith('#')) continue;
+              if (line.trim()) {
+                description = line.trim();
+                break;
+              }
             }
+            skillsMap.set(entry.name, {
+              name: entry.name,
+              description: description || `Run ${entry.name} skill`,
+              filePath: skillPath,
+            });
           }
-          skills.push({
-            name: entry.name,
-            description: description || `Run ${entry.name} skill`,
-            filePath: skillPath,
-          });
         }
       }
-    }
+    };
 
-    return skills;
+    // Scan global directory first
+    const globalSkillsDir = path.join(os.homedir(), '.claude', 'skills');
+    scanSkillsDir(globalSkillsDir);
+
+    // Scan project directory second (overwrites global skills with same name)
+    const projectSkillsDir = path.join(this.projectPath, '.claude', 'skills');
+    scanSkillsDir(projectSkillsDir);
+
+    return Array.from(skillsMap.values());
   }
 
   /**
    * Get skill content by name
+   * Checks project directory first, then falls back to global directory
    */
   private async getSkillContent(skillName: string): Promise<string> {
     if (!this.projectPath) {
       throw new Error('Project path not set');
     }
 
-    const skillPath = path.join(
+    // Check project directory first
+    const projectSkillPath = path.join(
       this.projectPath,
       '.claude',
       'skills',
@@ -96,11 +112,24 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
       'SKILL.md'
     );
 
-    if (!fs.existsSync(skillPath)) {
-      throw new Error(`Skill not found: ${skillName}`);
+    if (fs.existsSync(projectSkillPath)) {
+      return fs.readFileSync(projectSkillPath, 'utf-8');
     }
 
-    return fs.readFileSync(skillPath, 'utf-8');
+    // Fall back to global directory
+    const globalSkillPath = path.join(
+      os.homedir(),
+      '.claude',
+      'skills',
+      skillName,
+      'SKILL.md'
+    );
+
+    if (fs.existsSync(globalSkillPath)) {
+      return fs.readFileSync(globalSkillPath, 'utf-8');
+    }
+
+    throw new Error(`Skill not found: ${skillName}`);
   }
 
   /**
@@ -117,83 +146,11 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
     return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  /**
-   * Generate a unique permission request ID
-   */
-  private generatePermissionId(): string {
-    return `perm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * Classify a tool call for permission type
-   */
-  private classifyPermission(
-    toolName: string,
-    input: Record<string, unknown>
-  ): PermissionType {
-    if (toolName === 'Read' || toolName === 'Glob' || toolName === 'Grep') {
-      return 'file_read';
-    }
-
-    if (toolName === 'Edit') {
-      return 'file_edit';
-    }
-
-    if (toolName === 'Write') {
-      const filePath = input.file_path as string | undefined;
-      if (filePath && fs.existsSync(filePath)) {
-        return 'file_edit';
-      }
-      return 'file_create';
-    }
-
-    if (toolName === 'Bash') {
-      const command = input.command as string | undefined;
-      if (command) {
-        // Classify bash commands
-        if (command.match(/\brm\b/)) {
-          return 'file_delete';
-        }
-        if (command.match(/\bgit\b/)) {
-          return 'bash_git';
-        }
-        // Read-only commands
-        if (
-          command.match(
-            /^(ls|cat|head|tail|grep|find|echo|pwd|which|env|printenv)\b/
-          )
-        ) {
-          return 'bash_readonly';
-        }
-        return 'bash_write';
-      }
-    }
-
-    return 'file_read'; // Default to safest
-  }
-
-  /**
-   * Check if a tool call should be auto-approved
-   */
-  private shouldAutoApprove(
-    toolName: string,
-    input: Record<string, unknown>,
-    approvedPermissions: Set<string>
-  ): boolean {
-    const permType = this.classifyPermission(toolName, input);
-
-    // Auto-approve read operations
-    if (permType === 'file_read' || permType === 'bash_readonly') {
-      return true;
-    }
-
-    // Check if user has approved this type for the session
-    if (approvedPermissions.has(permType)) {
-      return true;
-    }
-
-    return false;
-  }
+  // NOTE: Permission classification methods removed while permissionMode: 'bypassPermissions'
+  // is active. When permission handling is re-enabled, recreate:
+  // - generatePermissionId(): string
+  // - classifyPermission(toolName, input): PermissionType
+  // - shouldAutoApprove(toolName, input, approvedPermissions): boolean
 
   /**
    * Run a skill and stream results
@@ -226,6 +183,7 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
       pendingPermissionResolve: null,
       approvedPermissions: new Set(),
       abortController,
+      sdkSessionId: null,
     };
     this.sessions.set(sessionId, sessionState);
 
@@ -290,6 +248,7 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
       pendingPermissionResolve: null,
       approvedPermissions: new Set(),
       abortController,
+      sdkSessionId: null,
     };
     this.sessions.set(sessionId, sessionState);
 
@@ -346,12 +305,16 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
     state.messages.push(userMessage);
     this.emit('message', sessionId, userMessage);
 
-    // Resume the session
+    // Resume the session using SDK's conversation ID
+    if (!state.sdkSessionId) {
+      throw new Error('Cannot continue session: SDK session ID not available');
+    }
+
     state.session.status = 'running';
     state.session.updatedAt = new Date().toISOString();
     state.abortController = new AbortController();
 
-    this.runQuery(sessionId, message, state.session.id).catch((error) => {
+    this.runQuery(sessionId, message, state.sdkSessionId).catch((error) => {
       console.error('Continue error:', error);
       this.emit(
         'complete',
@@ -478,8 +441,13 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
           break;
         }
 
-        const agentMessage = this.convertMessage(sessionId, message);
-        if (agentMessage) {
+        // Capture SDK session ID from system init message for resume support
+        if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
+          state.sdkSessionId = message.session_id;
+        }
+
+        const agentMessages = this.convertMessage(sessionId, message);
+        for (const agentMessage of agentMessages) {
           state.messages.push(agentMessage);
           this.emit('message', sessionId, agentMessage);
         }
@@ -509,14 +477,14 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
 
   /**
    * Convert SDK message to our AgentMessage type
+   * Returns an array since one SDK message may contain multiple tool_use blocks
    */
   private convertMessage(
     sessionId: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sdkMessage: any
-  ): AgentMessage | null {
+  ): AgentMessage[] {
     const baseMessage = {
-      id: this.generateMessageId(),
       sessionId,
       timestamp: new Date().toISOString(),
     };
@@ -526,25 +494,52 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
         // SDK uses BetaMessage structure with message.content array
         const message = sdkMessage.message;
         const contentArray = message?.content || [];
+        const messages: AgentMessage[] = [];
+
+        // Extract tool_use blocks first and emit as separate tool_call messages
+        const toolUseBlocks = contentArray.filter(
+          (b: { type: string }) => b.type === 'tool_use'
+        );
+        for (const toolUse of toolUseBlocks) {
+          messages.push({
+            ...baseMessage,
+            id: this.generateMessageId(),
+            type: 'tool_call',
+            content: {
+              type: 'tool_call',
+              toolName: toolUse.name || 'Unknown',
+              input: toolUse.input || {},
+            },
+          });
+        }
+
+        // Extract text content
         const textContent = contentArray
           .filter((b: { type: string }) => b.type === 'text')
           .map((b: { text: string }) => b.text)
           .join('\n');
 
-        return {
-          ...baseMessage,
-          type: 'assistant',
-          content: {
+        // Only emit assistant message if there's text content
+        if (textContent) {
+          messages.push({
+            ...baseMessage,
+            id: this.generateMessageId(),
             type: 'assistant',
-            text: textContent || '',
-            contentBlocks: contentArray,
-          },
-        };
+            content: {
+              type: 'assistant',
+              text: textContent,
+              contentBlocks: contentArray,
+            },
+          });
+        }
+
+        return messages;
       }
 
       case 'system':
-        return {
+        return [{
           ...baseMessage,
+          id: this.generateMessageId(),
           type: 'system',
           content: {
             type: 'system',
@@ -552,12 +547,13 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
             sessionId: sdkMessage.session_id,
             message: sdkMessage.message,
           },
-        };
+        }];
 
       case 'result':
         // Result messages indicate completion - handled separately
-        return {
+        return [{
           ...baseMessage,
+          id: this.generateMessageId(),
           type: 'system',
           content: {
             type: 'system',
@@ -565,34 +561,16 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
             sessionId: sdkMessage.session_id,
             message: sdkMessage.result || 'Completed',
           },
-        };
+        }];
 
       default:
         // Skip other message types (stream_event, etc.)
-        return null;
+        return [];
     }
   }
 
-  /**
-   * Get human-readable permission description
-   */
-  private getPermissionDescription(
-    toolName: string,
-    input: Record<string, unknown>
-  ): string {
-    switch (toolName) {
-      case 'Edit':
-        return `Edit file: ${input.file_path}`;
-      case 'Write':
-        return `Write file: ${input.file_path}`;
-      case 'Bash':
-        return `Run command: ${input.command}`;
-      case 'Read':
-        return `Read file: ${input.file_path}`;
-      default:
-        return `${toolName}: ${JSON.stringify(input)}`;
-    }
-  }
+  // NOTE: getPermissionDescription(toolName, input) removed while permissionMode: 'bypassPermissions'
+  // is active. Recreate when permission handling is re-enabled.
 }
 
 export const claudeAgentService = new ClaudeAgentService();
