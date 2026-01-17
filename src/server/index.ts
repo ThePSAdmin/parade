@@ -61,9 +61,9 @@ app.get('/api/app/version', (_req, res) => {
 
 // Serve static frontend in production
 // When running via tsx (dev), __dirname is src/server
-// When running compiled, __dirname is dist/server
+// When running compiled, __dirname is dist/server/server
 // Web files are built to dist/web
-const webDistPath = path.resolve(__dirname, '../../dist/web');
+const webDistPath = path.resolve(__dirname, '../../web');
 if (fs.existsSync(webDistPath)) {
   console.log('Serving static files from:', webDistPath);
   app.use(express.static(webDistPath));
