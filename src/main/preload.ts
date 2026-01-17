@@ -69,6 +69,8 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.DISCOVERY.SET_DATABASE_PATH, path),
     getDatabasePath: () =>
       ipcRenderer.invoke(IPC_CHANNELS.DISCOVERY.GET_DATABASE_PATH),
+    setSdkSessionId: (briefId: string, sdkSessionId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DISCOVERY.SET_SDK_SESSION, briefId, sdkSessionId),
   },
   docs: {
     listFiles: () =>

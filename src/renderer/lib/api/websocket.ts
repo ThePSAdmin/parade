@@ -5,7 +5,9 @@ import type {
   AgentClientMessage,
   AgentMessage,
   PermissionRequest,
+  SessionType,
 } from '../../../shared/types/agent';
+import { useDiscoveryWorkflowStore } from '../../store/discoveryWorkflowStore';
 
 type EventCallback = () => void;
 type AgentMessageCallback = (sessionId: string, message: AgentMessage) => void;
@@ -20,8 +22,16 @@ class ParadeWebSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isConnecting = false;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 10;
+  private maxReconnectAttempts = 30;
   private reconnectDelay = 1000;
+
+  // Heartbeat state
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private lastPong: number = Date.now();
+
+  // Session type tracking for routing
+  private sessionTypes = new Map<string, SessionType>();
+  private pendingSessionType: SessionType | undefined = undefined;
 
   // Agent-specific listeners
   private agentMessageListeners = new Set<AgentMessageCallback>();
@@ -51,11 +61,18 @@ class ParadeWebSocket {
         console.log('WebSocket connected');
         this.isConnecting = false;
         this.reconnectAttempts = 0;
+        this.startHeartbeat();
       };
 
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+
+          // Handle heartbeat pong
+          if (data.type === 'pong') {
+            this.lastPong = Date.now();
+            return;
+          }
 
           // Handle agent-specific messages
           if (data.type?.startsWith('agent:')) {
@@ -77,6 +94,7 @@ class ParadeWebSocket {
         console.log('WebSocket disconnected');
         this.isConnecting = false;
         this.ws = null;
+        this.stopHeartbeat();
         this.scheduleReconnect();
       };
 
@@ -115,7 +133,36 @@ class ParadeWebSocket {
     }, delay);
   }
 
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.lastPong = Date.now();
+
+    // Send ping every 30 seconds
+    this.heartbeatInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        // Check if we received a pong within the last 60 seconds
+        const timeSinceLastPong = Date.now() - this.lastPong;
+        if (timeSinceLastPong > 60000) {
+          console.log('WebSocket heartbeat timeout, reconnecting...');
+          this.ws.close();
+          return;
+        }
+
+        // Send ping
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 30000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
   disconnect() {
+    this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -163,14 +210,35 @@ class ParadeWebSocket {
         break;
       case 'agent:complete':
         this.agentCompleteListeners.forEach((cb) => cb(data.sessionId, data.status, data.error));
+        // Clean up session type tracking on completion
+        this.sessionTypes.delete(data.sessionId);
         break;
       case 'agent:session_started':
+        // Associate pending session type with the new session ID
+        if (this.pendingSessionType) {
+          this.sessionTypes.set(data.sessionId, this.pendingSessionType);
+          // Route discovery sessions to the discovery workflow store
+          if (this.pendingSessionType === 'discovery') {
+            useDiscoveryWorkflowStore.getState().setSdkSessionId(data.sessionId);
+          }
+          this.pendingSessionType = undefined;
+        }
         this.agentSessionStartedListeners.forEach((cb) => cb(data.sessionId));
         break;
       case 'agent:error':
         this.agentErrorListeners.forEach((cb) => cb(data.error));
         break;
     }
+  }
+
+  // Set session type for routing purposes (called before sending agent:run)
+  setSessionType(sessionId: string, sessionType: SessionType): void {
+    this.sessionTypes.set(sessionId, sessionType);
+  }
+
+  // Get session type for a session
+  getSessionType(sessionId: string): SessionType | undefined {
+    return this.sessionTypes.get(sessionId);
   }
 
   // Send a message to the server
@@ -219,8 +287,10 @@ class ParadeWebSocket {
   }
 
   // Send agent commands
-  runSkill(skill: string, prompt?: string, args?: Record<string, unknown>): void {
-    this.send({ type: 'agent:run', skill, prompt, args });
+  runSkill(skill: string, prompt?: string, args?: Record<string, unknown>, sessionType?: SessionType, resumeSessionId?: string): void {
+    // Store session type for routing when session_started arrives
+    this.pendingSessionType = sessionType;
+    this.send({ type: 'agent:run', skill, prompt, args, sessionType, resumeSessionId });
   }
 
   continueSession(sessionId: string, message: string): void {

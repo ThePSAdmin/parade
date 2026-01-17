@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useDiscoveryStore } from '../../store/discoveryStore';
 import PipelineColumn from './PipelineColumn';
+import DiscoveryWorkflowModal from './DiscoveryWorkflowModal';
 import type { Brief, BriefStatus } from '../../../shared/types/discovery';
 
 export const PIPELINE_STAGES: { status: BriefStatus; label: string }[] = [
@@ -18,6 +19,7 @@ export default function PipelineBoard() {
   const briefs = useDiscoveryStore((state) => state.briefs);
   const isLoading = useDiscoveryStore((state) => state.isLoading);
   const error = useDiscoveryStore((state) => state.error);
+  const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
 
   useEffect(() => {
     // Use getState() to avoid dependency on action references
@@ -82,15 +84,22 @@ export default function PipelineBoard() {
   }
 
   return (
-    <div className="flex gap-4 p-4 h-full overflow-x-auto">
-      {PIPELINE_STAGES.map((stage) => (
-        <PipelineColumn
-          key={stage.status}
-          title={stage.label}
-          status={stage.status}
-          briefs={briefsByStatus[stage.status] || []}
-        />
-      ))}
-    </div>
+    <>
+      <div className="flex gap-4 p-4 h-full overflow-x-auto">
+        {PIPELINE_STAGES.map((stage) => (
+          <PipelineColumn
+            key={stage.status}
+            title={stage.label}
+            status={stage.status}
+            briefs={briefsByStatus[stage.status] || []}
+            onAddClick={stage.status === 'draft' ? () => setShowDiscoveryModal(true) : undefined}
+          />
+        ))}
+      </div>
+      <DiscoveryWorkflowModal
+        open={showDiscoveryModal}
+        onOpenChange={setShowDiscoveryModal}
+      />
+    </>
   );
 }

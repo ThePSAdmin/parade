@@ -95,44 +95,6 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
   }
 
   /**
-   * Get skill content by name
-   * Checks project directory first, then falls back to global directory
-   */
-  private async getSkillContent(skillName: string): Promise<string> {
-    if (!this.projectPath) {
-      throw new Error('Project path not set');
-    }
-
-    // Check project directory first
-    const projectSkillPath = path.join(
-      this.projectPath,
-      '.claude',
-      'skills',
-      skillName,
-      'SKILL.md'
-    );
-
-    if (fs.existsSync(projectSkillPath)) {
-      return fs.readFileSync(projectSkillPath, 'utf-8');
-    }
-
-    // Fall back to global directory
-    const globalSkillPath = path.join(
-      os.homedir(),
-      '.claude',
-      'skills',
-      skillName,
-      'SKILL.md'
-    );
-
-    if (fs.existsSync(globalSkillPath)) {
-      return fs.readFileSync(globalSkillPath, 'utf-8');
-    }
-
-    throw new Error(`Skill not found: ${skillName}`);
-  }
-
-  /**
    * Generate a unique session ID
    */
   private generateSessionId(): string {
@@ -154,17 +116,18 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
 
   /**
    * Run a skill and stream results
+   * Skills are invoked via slash command syntax (e.g., "/discover args")
+   * which the SDK handles natively
    */
   async run(
     skillName: string,
     userPrompt?: string,
-    args?: Record<string, unknown>
+    _args?: Record<string, unknown>
   ): Promise<string> {
     if (!this.projectPath) {
       throw new Error('Project path not set');
     }
 
-    const skillContent = await this.getSkillContent(skillName);
     const sessionId = this.generateSessionId();
     const abortController = new AbortController();
 
@@ -203,10 +166,11 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
     sessionState.messages.push(initMessage);
     this.emit('message', sessionId, initMessage);
 
-    // Build the prompt
+    // Build the prompt as a slash command - the SDK handles skill invocation natively
+    // Format: "/{skillName}" or "/{skillName} {userPrompt}"
     const fullPrompt = userPrompt
-      ? `${skillContent}\n\n---\n\nUser request: ${userPrompt}${args ? `\n\nArguments: ${JSON.stringify(args)}` : ''}`
-      : skillContent;
+      ? `/${skillName} ${userPrompt}`
+      : `/${skillName}`;
 
     // Run the query in background
     this.runQuery(sessionId, fullPrompt).catch((error) => {
@@ -430,6 +394,8 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
           cwd: state.session.projectPath,
           abortController: state.abortController || undefined,
           ...(resumeSessionId && { resume: resumeSessionId }),
+          // Load skills from both user (~/.claude/) and project (.claude/) directories
+          settingSources: ['user', 'project'],
           // TEMPORARY: Bypass all permissions for testing
           permissionMode: 'bypassPermissions',
         },

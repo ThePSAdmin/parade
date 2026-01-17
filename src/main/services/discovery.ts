@@ -73,6 +73,9 @@ class DiscoveryService {
         // Set busy timeout for handling concurrent access
         this.db.pragma('busy_timeout = 5000');
         console.log('Discovery database connected:', this.dbPath);
+
+        // Run idempotent migrations
+        this.runMigrations(this.db);
       } catch (err) {
         console.error('Failed to connect to discovery database:', err);
         throw new Error(`Failed to open discovery database: ${err}`);
@@ -82,6 +85,24 @@ class DiscoveryService {
       throw new Error('Discovery database not initialized. Call setDatabasePath() first.');
     }
     return this.db;
+  }
+
+  /**
+   * Run idempotent schema migrations
+   * Each migration is safe to run multiple times
+   */
+  private runMigrations(db: Database.Database): void {
+    // Add sdk_session_id column to briefs table (idempotent)
+    try {
+      db.exec('ALTER TABLE briefs ADD COLUMN sdk_session_id TEXT');
+      console.log('Migration: Added sdk_session_id column to briefs table');
+    } catch (err: unknown) {
+      const error = err as Error;
+      // Ignore "duplicate column name" error - column already exists
+      if (!error.message.includes('duplicate column name')) {
+        console.error('Migration error:', error.message);
+      }
+    }
   }
 
   /**
@@ -336,6 +357,38 @@ class DiscoveryService {
       );
       const result = stmt.run(status, id);
       return { success: result.changes > 0 };
+    });
+  }
+
+  /**
+   * Set the SDK session ID for a brief
+   * Used to persist Claude Code SDK session for conversation continuity
+   * @param id - Brief ID
+   * @param sdkSessionId - SDK session ID to persist
+   */
+  setSdkSessionId(id: string, sdkSessionId: string): void {
+    const db = this.ensureConnection();
+
+    this.withRetry(() => {
+      const stmt = db.prepare(
+        'UPDATE briefs SET sdk_session_id = ?, updated_at = datetime(\'now\') WHERE id = ?'
+      );
+      stmt.run(sdkSessionId, id);
+    });
+  }
+
+  /**
+   * Get the SDK session ID for a brief
+   * @param id - Brief ID
+   * @returns SDK session ID or null if not set
+   */
+  getSdkSessionId(id: string): string | null {
+    const db = this.ensureConnection();
+
+    return this.withRetry(() => {
+      const stmt = db.prepare('SELECT sdk_session_id FROM briefs WHERE id = ?');
+      const result = stmt.get(id) as { sdk_session_id: string | null } | undefined;
+      return result?.sdk_session_id ?? null;
     });
   }
 

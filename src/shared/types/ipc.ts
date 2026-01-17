@@ -76,6 +76,7 @@ export const IPC_CHANNELS = {
     GET_PIPELINE_SUMMARY: 'discovery:get-pipeline-summary',
     SET_DATABASE_PATH: 'discovery:set-database-path',
     GET_DATABASE_PATH: 'discovery:get-database-path',
+    SET_SDK_SESSION: 'discovery:set-sdk-session',
   },
 
   // Docs operations
@@ -376,6 +377,7 @@ export interface ElectronAPI {
     getPipelineSummary: () => Promise<PipelineSummary>;
     setDatabasePath: (path: string) => Promise<void>;
     getDatabasePath: () => Promise<string | null>;
+    setSdkSessionId: (briefId: string, sdkSessionId: string) => Promise<{ success: boolean; error?: string }>;
   };
   docs: {
     listFiles: () => Promise<DocsListResult>;
