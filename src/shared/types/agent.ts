@@ -5,7 +5,7 @@
 // Session types
 export interface AgentSession {
   id: string;
-  skillName: string;
+  skillName?: string;  // Optional for freeform prompt sessions
   status: AgentSessionStatus;
   createdAt: string;
   updatedAt: string;

@@ -126,11 +126,20 @@ async function handleAgentMessage(ws: WebSocket, message: AgentClientMessage) {
   try {
     switch (message.type) {
       case 'agent:run': {
-        const sessionId = await claudeAgentService.run(
-          message.skill,
-          message.prompt,
-          message.args
-        );
+        let sessionId: string;
+        if (message.skill) {
+          // Run a skill with optional prompt
+          sessionId = await claudeAgentService.run(
+            message.skill,
+            message.prompt,
+            message.args
+          );
+        } else if (message.prompt) {
+          // Run freeform prompt (no skill)
+          sessionId = await claudeAgentService.runWithPrompt(message.prompt);
+        } else {
+          throw new Error('Either skill or prompt is required');
+        }
         ws.send(
           JSON.stringify({
             type: 'agent:session_started',

@@ -52,6 +52,7 @@ export function AgentPanel() {
   } = useAgentStore();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { activeSessionId } = useAgentStore();
 
   // Fetch skills and subscribe to events on mount
   useEffect(() => {
@@ -67,7 +68,14 @@ export function AgentPanel() {
 
   const handleSend = () => {
     if (!inputValue.trim()) return;
-    continueSession(inputValue.trim());
+    if (activeSessionId) {
+      // Continue existing session
+      continueSession(inputValue.trim());
+    } else {
+      // Start new session with freeform prompt (empty skill name)
+      runSkill('', inputValue.trim());
+    }
+    setInputValue('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

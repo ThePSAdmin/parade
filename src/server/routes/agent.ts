@@ -68,15 +68,23 @@ agentRouter.get('/sessions/:id/messages', async (req, res) => {
   }
 });
 
-// Run a skill (POST for starting a new session)
+// Run a skill or freeform prompt (POST for starting a new session)
 agentRouter.post('/run', async (req, res) => {
   try {
     const { skill, prompt, args } = req.body as RunSkillParams;
-    if (!skill) {
-      res.status(400).json({ error: 'Skill name is required' } as RunSkillResponse);
+
+    let sessionId: string;
+    if (skill) {
+      // Run a skill with optional prompt
+      sessionId = await claudeAgentService.run(skill, prompt, args);
+    } else if (prompt) {
+      // Run freeform prompt (no skill)
+      sessionId = await claudeAgentService.runWithPrompt(prompt);
+    } else {
+      res.status(400).json({ error: 'Either skill or prompt is required' } as RunSkillResponse);
       return;
     }
-    const sessionId = await claudeAgentService.run(skill, prompt, args);
+
     const response: RunSkillResponse = { sessionId };
     res.json(response);
   } catch (err) {
