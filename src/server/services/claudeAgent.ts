@@ -1,9 +1,8 @@
 /**
  * ClaudeAgentService - SDK wrapper for running Claude skills from the web UI
- *
- * Delegates to AgentJobQueue for process-isolated SDK execution.
  */
 
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
@@ -14,7 +13,6 @@ import type {
   PermissionRequest,
   Skill,
 } from '../../shared/types/agent';
-import { AgentJobQueue, type JobRequest } from './agentJobQueue';
 
 interface SessionState {
   session: AgentSession;
@@ -22,8 +20,8 @@ interface SessionState {
   pendingPermission: PermissionRequest | null;
   pendingPermissionResolve: ((decision: 'approve' | 'deny') => void) | null;
   approvedPermissions: Set<string>; // Permission types approved for session
+  abortController: AbortController | null;
   sdkSessionId: string | null; // The SDK's conversation ID, used for resume
-  jobId: string | null; // The job queue's job ID
 }
 
 type AgentEventMap = {
@@ -35,91 +33,9 @@ type AgentEventMap = {
 class ClaudeAgentService extends EventEmitter<AgentEventMap> {
   private projectPath: string | null = null;
   private sessions: Map<string, SessionState> = new Map();
-  private jobQueue: AgentJobQueue | null = null;
-  private jobQueueInitialized = false;
 
   setProjectPath(projectPath: string) {
     this.projectPath = projectPath;
-  }
-
-  /**
-   * Initialize the job queue if not already initialized
-   */
-  private async ensureJobQueue(): Promise<AgentJobQueue> {
-    if (!this.jobQueue) {
-      this.jobQueue = new AgentJobQueue({ poolSize: 2 });
-
-      // Set up event listeners for job queue events
-      this.jobQueue.on('message', this.handleJobQueueMessage.bind(this));
-      this.jobQueue.on('complete', this.handleJobQueueComplete.bind(this));
-      this.jobQueue.on('error', this.handleJobQueueError.bind(this));
-    }
-
-    if (!this.jobQueueInitialized) {
-      await this.jobQueue.start();
-      this.jobQueueInitialized = true;
-    }
-
-    return this.jobQueue;
-  }
-
-  /**
-   * Handle messages from the job queue
-   */
-  private handleJobQueueMessage(event: { sessionId: string; data: AgentMessage }): void {
-    const state = this.sessions.get(event.sessionId);
-    if (!state) return;
-
-    // The data is already an AgentMessage from the worker
-    const message = event.data;
-
-    // Capture SDK session ID from system init message for resume support
-    if (
-      message.type === 'system' &&
-      message.content.type === 'system' &&
-      message.content.subtype === 'init' &&
-      message.content.sessionId
-    ) {
-      state.sdkSessionId = message.content.sessionId;
-    }
-
-    state.messages.push(message);
-    this.emit('message', event.sessionId, message);
-  }
-
-  /**
-   * Handle job completion from the job queue
-   */
-  private handleJobQueueComplete(event: {
-    jobId: string;
-    sessionId: string;
-    status: string;
-    error?: string;
-  }): void {
-    const state = this.sessions.get(event.sessionId);
-    if (!state) return;
-
-    if (event.status === 'success') {
-      state.session.status = 'completed';
-      state.session.updatedAt = new Date().toISOString();
-      this.emit('complete', event.sessionId, 'success', undefined);
-    } else {
-      state.session.status = 'error';
-      state.session.updatedAt = new Date().toISOString();
-      this.emit('complete', event.sessionId, 'error', event.error);
-    }
-  }
-
-  /**
-   * Handle errors from the job queue
-   */
-  private handleJobQueueError(event: { sessionId: string; error: string }): void {
-    const state = this.sessions.get(event.sessionId);
-    if (!state) return;
-
-    state.session.status = 'error';
-    state.session.updatedAt = new Date().toISOString();
-    this.emit('complete', event.sessionId, 'error', event.error);
   }
 
   /**
@@ -213,6 +129,7 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
     }
 
     const sessionId = this.generateSessionId();
+    const abortController = new AbortController();
 
     // Create session state
     const sessionState: SessionState = {
@@ -228,8 +145,8 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
       pendingPermission: null,
       pendingPermissionResolve: null,
       approvedPermissions: new Set(),
+      abortController,
       sdkSessionId: null,
-      jobId: null,
     };
     this.sessions.set(sessionId, sessionState);
 
@@ -255,18 +172,16 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
       ? `/${skillName} ${userPrompt}`
       : `/${skillName}`;
 
-    // Dispatch to job queue for process-isolated execution
-    const jobQueue = await this.ensureJobQueue();
-    const jobRequest: JobRequest = {
-      sessionId,
-      prompt: fullPrompt,
-      options: {
-        cwd: this.projectPath,
-        model: 'claude-sonnet-4-5',
-      },
-    };
-    const jobId = jobQueue.dispatch(jobRequest);
-    sessionState.jobId = jobId;
+    // Run the query in background
+    this.runQuery(sessionId, fullPrompt).catch((error) => {
+      console.error('Query error:', error);
+      this.emit(
+        'complete',
+        sessionId,
+        'error',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+    });
 
     return sessionId;
   }
@@ -280,6 +195,7 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
     }
 
     const sessionId = this.generateSessionId();
+    const abortController = new AbortController();
 
     // Create session state
     const sessionState: SessionState = {
@@ -295,8 +211,8 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
       pendingPermission: null,
       pendingPermissionResolve: null,
       approvedPermissions: new Set(),
+      abortController,
       sdkSessionId: null,
-      jobId: null,
     };
     this.sessions.set(sessionId, sessionState);
 
@@ -316,18 +232,16 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
     sessionState.messages.push(initMessage);
     this.emit('message', sessionId, initMessage);
 
-    // Dispatch to job queue for process-isolated execution
-    const jobQueue = await this.ensureJobQueue();
-    const jobRequest: JobRequest = {
-      sessionId,
-      prompt,
-      options: {
-        cwd: this.projectPath,
-        model: 'claude-sonnet-4-5',
-      },
-    };
-    const jobId = jobQueue.dispatch(jobRequest);
-    sessionState.jobId = jobId;
+    // Run the query in background
+    this.runQuery(sessionId, prompt).catch((error) => {
+      console.error('Query error:', error);
+      this.emit(
+        'complete',
+        sessionId,
+        'error',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+    });
 
     return sessionId;
   }
@@ -362,20 +276,17 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
 
     state.session.status = 'running';
     state.session.updatedAt = new Date().toISOString();
+    state.abortController = new AbortController();
 
-    // Dispatch to job queue with resume option
-    const jobQueue = await this.ensureJobQueue();
-    const jobRequest: JobRequest = {
-      sessionId,
-      prompt: message,
-      options: {
-        cwd: state.session.projectPath,
-        model: 'claude-sonnet-4-5',
-        resume: state.sdkSessionId,
-      },
-    };
-    const jobId = jobQueue.dispatch(jobRequest);
-    state.jobId = jobId;
+    this.runQuery(sessionId, message, state.sdkSessionId).catch((error) => {
+      console.error('Continue error:', error);
+      this.emit(
+        'complete',
+        sessionId,
+        'error',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+    });
   }
 
   /**
@@ -426,14 +337,13 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
       throw new Error(`Session not found: ${sessionId}`);
     }
 
-    // Abort the job in the queue
-    if (this.jobQueue) {
-      this.jobQueue.abort(sessionId);
+    if (state.abortController) {
+      state.abortController.abort();
     }
 
     state.session.status = 'completed';
     state.session.updatedAt = new Date().toISOString();
-    this.emit('complete', sessionId, 'cancelled', undefined);
+    this.emit('complete', sessionId, 'cancelled');
   }
 
   /**
@@ -466,18 +376,164 @@ class ClaudeAgentService extends EventEmitter<AgentEventMap> {
   }
 
   /**
-   * Reset internal state - FOR TESTING ONLY
-   * Clears sessions and resets job queue initialization flag
+   * Internal: Run the query and process messages
    */
-  _resetForTesting(): void {
-    this.sessions.clear();
-    this.jobQueue = null;
-    this.jobQueueInitialized = false;
+  private async runQuery(
+    sessionId: string,
+    prompt: string,
+    resumeSessionId?: string
+  ): Promise<void> {
+    const state = this.sessions.get(sessionId);
+    if (!state) return;
+
+    try {
+      const response = query({
+        prompt,
+        options: {
+          model: 'claude-sonnet-4-5',
+          cwd: state.session.projectPath,
+          abortController: state.abortController || undefined,
+          ...(resumeSessionId && { resume: resumeSessionId }),
+          // Load skills from both user (~/.claude/) and project (.claude/) directories
+          settingSources: ['user', 'project'],
+          // TEMPORARY: Bypass all permissions for testing
+          permissionMode: 'bypassPermissions',
+        },
+      });
+
+      for await (const message of response) {
+        // Check for abort
+        if (state.abortController?.signal.aborted) {
+          break;
+        }
+
+        // Capture SDK session ID from system init message for resume support
+        if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
+          state.sdkSessionId = message.session_id;
+        }
+
+        const agentMessages = this.convertMessage(sessionId, message);
+        for (const agentMessage of agentMessages) {
+          state.messages.push(agentMessage);
+          this.emit('message', sessionId, agentMessage);
+        }
+
+        // Handle completion - SDK uses 'result' type for completion
+        if (message.type === 'result') {
+          state.session.status = 'completed';
+          state.session.updatedAt = new Date().toISOString();
+          const isError = 'is_error' in message && message.is_error;
+          this.emit('complete', sessionId, isError ? 'error' : 'success');
+          return;
+        }
+      }
+
+      // If we got here without explicit completion, mark as completed
+      if (state.session.status === 'running') {
+        state.session.status = 'completed';
+        state.session.updatedAt = new Date().toISOString();
+        this.emit('complete', sessionId, 'success');
+      }
+    } catch (error) {
+      state.session.status = 'error';
+      state.session.updatedAt = new Date().toISOString();
+      throw error;
+    }
   }
 
-  // NOTE: runQuery() and convertMessage() methods moved to agentWorker.ts
-  // for process-isolated SDK execution. Message conversion now happens in
-  // the worker and messages are forwarded via IPC to handleJobQueueMessage().
+  /**
+   * Convert SDK message to our AgentMessage type
+   * Returns an array since one SDK message may contain multiple tool_use blocks
+   */
+  private convertMessage(
+    sessionId: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sdkMessage: any
+  ): AgentMessage[] {
+    const baseMessage = {
+      sessionId,
+      timestamp: new Date().toISOString(),
+    };
+
+    switch (sdkMessage.type) {
+      case 'assistant': {
+        // SDK uses BetaMessage structure with message.content array
+        const message = sdkMessage.message;
+        const contentArray = message?.content || [];
+        const messages: AgentMessage[] = [];
+
+        // Extract tool_use blocks first and emit as separate tool_call messages
+        const toolUseBlocks = contentArray.filter(
+          (b: { type: string }) => b.type === 'tool_use'
+        );
+        for (const toolUse of toolUseBlocks) {
+          messages.push({
+            ...baseMessage,
+            id: this.generateMessageId(),
+            type: 'tool_call',
+            content: {
+              type: 'tool_call',
+              toolName: toolUse.name || 'Unknown',
+              input: toolUse.input || {},
+            },
+          });
+        }
+
+        // Extract text content
+        const textContent = contentArray
+          .filter((b: { type: string }) => b.type === 'text')
+          .map((b: { text: string }) => b.text)
+          .join('\n');
+
+        // Only emit assistant message if there's text content
+        if (textContent) {
+          messages.push({
+            ...baseMessage,
+            id: this.generateMessageId(),
+            type: 'assistant',
+            content: {
+              type: 'assistant',
+              text: textContent,
+              contentBlocks: contentArray,
+            },
+          });
+        }
+
+        return messages;
+      }
+
+      case 'system':
+        return [{
+          ...baseMessage,
+          id: this.generateMessageId(),
+          type: 'system',
+          content: {
+            type: 'system',
+            subtype: sdkMessage.subtype || 'info',
+            sessionId: sdkMessage.session_id,
+            message: sdkMessage.message,
+          },
+        }];
+
+      case 'result':
+        // Result messages indicate completion - handled separately
+        return [{
+          ...baseMessage,
+          id: this.generateMessageId(),
+          type: 'system',
+          content: {
+            type: 'system',
+            subtype: 'completion' as const,
+            sessionId: sdkMessage.session_id,
+            message: sdkMessage.result || 'Completed',
+          },
+        }];
+
+      default:
+        // Skip other message types (stream_event, etc.)
+        return [];
+    }
+  }
 
   // NOTE: getPermissionDescription(toolName, input) removed while permissionMode: 'bypassPermissions'
   // is active. Recreate when permission handling is re-enabled.
